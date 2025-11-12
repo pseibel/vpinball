@@ -186,26 +186,48 @@ struct TableInfoHeader {
 
 #### SegmentDisplayPacket (Score Stream)
 
-Broadcasts 7-segment and alphanumeric display data:
+Broadcasts segment display data for score/alphanumeric displays. Each display element (digit/character) has 16 float values representing individual segment brightness (0.0 = off, 1.0 = full brightness).
 
 ```c
-struct SegmentDisplayPacket {
-    uint32_t magic;              // 0x53454744 ('SEGD')
+struct SegmentDisplayHeader {
+    uint32_t magic;              // 0x53474553 ('SEGS')
     uint64_t timestamp_us;       // Microseconds since epoch
-    uint8_t displayId;           // Display identifier (0-255)
-    uint8_t displayType;         // 0=7seg, 1=9seg, 2=14seg, 3=16seg, 4=alphanum
-    uint8_t digitCount;          // Number of digits (1-32)
-    uint8_t reserved;
-    uint16_t segments[32];       // Segment data per digit (bit-packed)
-};
+    uint64_t displayId;          // Display identifier (CtlResId)
+    uint64_t groupId;            // Group identifier (CtlResId)
+    uint32_t frameId;            // Frame ID (for duplicate detection)
+    uint32_t hardware;           // Hardware type hint (VFD, LED, Plasma, etc.)
+    uint8_t nElements;           // Number of display elements (1-32)
+    uint8_t elementTypes[32];    // Type of each element (see below)
+    uint8_t reserved[3];         // Padding for alignment
+};  // 72 bytes
+
+// Followed by segment data:
+// float segmentData[nElements * 16];  // Brightness per segment (0.0-1.0)
 ```
 
-**Display Types:**
-- `0` = 7-segment numeric
-- `1` = 9-segment numeric with comma
-- `2` = 14-segment alphanumeric
-- `3` = 16-segment alphanumeric
-- `4` = Full alphanumeric (16-bit per character)
+**Packet Size**: 72 + (nElements × 16 × 4) bytes
+- Minimum: 72 + (1 × 16 × 4) = 136 bytes (single digit)
+- Typical (6 digits): 72 + (6 × 16 × 4) = 456 bytes
+- Maximum: 72 + (32 × 16 × 4) = 2,144 bytes
+
+**Element Types** (elementTypes array):
+- `0` = SEG_7: 7-segment numeric
+- `1` = SEG_7C: 7-segment + comma
+- `2` = SEG_7D: 7-segment + dot
+- `3` = SEG_9: 9-segment numeric
+- `4` = SEG_9C: 9-segment + comma
+- `5` = SEG_14: 14-segment alphanumeric
+- `6` = SEG_14D: 14-segment + dot
+- `7` = SEG_14DC: 14-segment + dot + comma
+- `8` = SEG_16: 16-segment (split top/bottom)
+
+**Segment Data Format**:
+Each element has 16 float values representing segment brightness. For 7-segment displays, only the first 7-8 floats are used (segments a-g, plus optional decimal point). Unused segments are set to 0.0.
+
+**Example**: A 6-digit 7-segment display broadcasting "123456":
+- Header: 72 bytes (nElements=6, elementTypes={0,0,0,0,0,0})
+- Segment data: 6 × 16 × 4 = 384 bytes (96 floats)
+- Total packet: 456 bytes
 
 ## Network Details
 
@@ -322,17 +344,17 @@ tcpdump -i any -n udp port 7778 -X
 import socket
 import struct
 
+# Listen on Device stream (port 7778)
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('', 7778))
 
 while True:
-    data, addr = sock.recvfrom(1024)
+    data, addr = sock.recvfrom(2048)
 
-    # Check for batch packet
-    if len(data) >= 16:
+    if len(data) >= 4:
         magic, = struct.unpack('<I', data[0:4])
 
-        if magic == 0x42464F44:  # Batch packet
+        if magic == 0x42464F44:  # 'DOFB' - Batch packet
             version, count = struct.unpack('<BB', data[4:6])
             print(f"Batch: {count} events from {addr}")
 
@@ -344,6 +366,46 @@ while True:
                         '<IQBBH', data[offset:offset+16])
                     print(f"  Event {i}: type={etype}, id={eid}, value={value}")
                 offset += 32
+
+        elif magic == 0x54424C49:  # 'TBLI' - Table Info
+            ts, tbl_len, rom_len = struct.unpack('<QHH', data[4:16])
+            offset = 20
+            table_name = data[offset:offset+tbl_len].decode('utf-8')
+            offset += tbl_len
+            rom_name = data[offset:offset+rom_len].decode('utf-8')
+            print(f"Table: '{table_name}' ROM: '{rom_name}'")
+```
+
+**Score Stream Receiver** (port 7781):
+
+```python
+import socket
+import struct
+
+# Listen on Score stream (port 7781)
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(('', 7781))
+
+while True:
+    data, addr = sock.recvfrom(4096)
+
+    if len(data) >= 4:
+        magic, = struct.unpack('<I', data[0:4])
+
+        if magic == 0x53474553:  # 'SEGS' - Segment Display
+            # Parse header (72 bytes)
+            header = struct.unpack('<IQQQQIIB32sB3s', data[0:72])
+            magic, ts, display_id, group_id, frame_id, hardware, n_elements = header[0:7]
+            element_types = header[7][:n_elements]
+
+            print(f"Display {display_id}: {n_elements} elements, frame {frame_id}")
+
+            # Parse segment data (float array)
+            offset = 72
+            for i in range(n_elements):
+                segments = struct.unpack('<16f', data[offset:offset+64])
+                print(f"  Element {i} ({element_types[i]}): {segments[:8]}")  # Show first 8 segments
+                offset += 64
 ```
 
 ## Troubleshooting
