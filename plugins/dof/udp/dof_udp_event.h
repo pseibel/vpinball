@@ -45,6 +45,9 @@ enum class EventType : uint8_t {
     BackglassLED = 11,    // Backglass LED (id, value 0-255)
     BackglassRGB = 12,    // Backglass RGB (id, r, g, b)
 
+    // Segment Display events (Score stream)
+    SegmentDisplay = 20,  // Segment display update (uses SegmentDisplayPacket)
+
     // Table lifecycle events
     TableLoaded = 128,    // Table loaded (tableName in payload)
     TableUnloaded = 129,  // Table unloaded
@@ -282,6 +285,107 @@ struct BatchPacket {
     void Reset() {
         header.eventCount = 0;
         header.timestamp_us = Event::GetTimestampMicros();
+    }
+};
+
+///////////////////////////////////////////////////////////////////////////////
+// Segment Display Packet (Variable Size)
+//
+// Used for score/alphanumeric segment displays
+// Format: Header + segment data array
+// Packet size = sizeof(SegmentDisplayHeader) + (nElements * 16 * sizeof(float))
+//
+// Maximum packet size: 96 + (32 * 16 * 4) = 2144 bytes
+///////////////////////////////////////////////////////////////////////////////
+
+// Segment element types (from ControllerPlugin.h)
+enum class SegElementType : uint8_t {
+    SEG_7 = 0,       // 7 segments
+    SEG_7C = 1,      // 7 segments + comma
+    SEG_7D = 2,      // 7 segments + dot
+    SEG_9 = 3,       // 9 segments
+    SEG_9C = 4,      // 9 segments + comma
+    SEG_14 = 5,      // 14 segments
+    SEG_14D = 6,     // 14 segments + dot
+    SEG_14DC = 7,    // 14 segments + dot + comma
+    SEG_16 = 8,      // 16 segments (split top/bottom)
+};
+
+constexpr uint32_t MAGIC_SEGMENT_DISPLAY = 0x53474553; // 'SEGS'
+constexpr uint32_t MAX_SEGMENT_ELEMENTS = 32;
+constexpr uint32_t SEGMENTS_PER_ELEMENT = 16;
+
+#pragma pack(push, 1)
+struct SegmentDisplayHeader {
+    uint32_t magic;              // MAGIC_SEGMENT_DISPLAY (0x53474553)
+    uint64_t timestamp_us;       // Microseconds since epoch
+    uint64_t displayId;          // Display ID (CtlResId)
+    uint64_t groupId;            // Group ID (CtlResId)
+    uint32_t frameId;            // Frame ID from source
+    uint32_t hardware;           // Hardware type hint (VFD, LED, etc.)
+    uint8_t nElements;           // Number of display elements (1-32)
+    uint8_t elementTypes[MAX_SEGMENT_ELEMENTS]; // Type of each element
+    uint8_t reserved[3];         // Padding for alignment
+
+    SegmentDisplayHeader()
+        : magic(MAGIC_SEGMENT_DISPLAY)
+        , timestamp_us(Event::GetTimestampMicros())
+        , displayId(0)
+        , groupId(0)
+        , frameId(0)
+        , hardware(0)
+        , nElements(0)
+        , reserved{0, 0, 0}
+    {
+        std::memset(elementTypes, 0, sizeof(elementTypes));
+    }
+};
+#pragma pack(pop)
+
+static_assert(sizeof(SegmentDisplayHeader) == 96, "SegmentDisplayHeader must be 96 bytes");
+
+// Complete segment display packet
+// Note: This structure contains a flexible array member
+// Actual size = sizeof(SegmentDisplayHeader) + (nElements * 16 * sizeof(float))
+struct SegmentDisplayPacket {
+    SegmentDisplayHeader header;
+    float segmentData[MAX_SEGMENT_ELEMENTS * SEGMENTS_PER_ELEMENT]; // Max size
+
+    SegmentDisplayPacket()
+        : header()
+    {
+        std::memset(segmentData, 0, sizeof(segmentData));
+    }
+
+    // Get actual packet size based on number of elements
+    size_t GetPacketSize() const {
+        return sizeof(SegmentDisplayHeader) + (header.nElements * SEGMENTS_PER_ELEMENT * sizeof(float));
+    }
+
+    // Factory method to create segment display packet
+    static SegmentDisplayPacket Create(
+        uint64_t displayId,
+        uint64_t groupId,
+        uint32_t frameId,
+        uint32_t hardware,
+        uint8_t nElements,
+        const uint8_t* elementTypes,
+        const float* segments)
+    {
+        SegmentDisplayPacket packet;
+        packet.header.displayId = displayId;
+        packet.header.groupId = groupId;
+        packet.header.frameId = frameId;
+        packet.header.hardware = hardware;
+        packet.header.nElements = nElements;
+
+        // Copy element types
+        std::memcpy(packet.header.elementTypes, elementTypes, nElements);
+
+        // Copy segment data
+        std::memcpy(packet.segmentData, segments, nElements * SEGMENTS_PER_ELEMENT * sizeof(float));
+
+        return packet;
     }
 };
 
