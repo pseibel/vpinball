@@ -69,6 +69,18 @@ public:
     void Wire(uint8_t id, uint16_t value);
     void Wire(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId);
 
+    // Submit a segment display event
+    // displayId: Unique display identifier
+    // groupId: Display group identifier
+    // frameId: Frame sequence number
+    // hardware: Hardware type hint (CTLPI_SEG_HARDWARE_xxx)
+    // nElements: Number of display elements (1-32)
+    // elementTypes: Array of SegElementType for each element
+    // segmentData: Array of float values (16 per element, one per segment)
+    void SegmentDisplay(uint64_t displayId, uint64_t groupId, uint32_t frameId,
+                       uint32_t hardware, uint8_t nElements,
+                       const uint8_t* elementTypes, const float* segmentData);
+
     // Submit a table loaded event
     void TableLoaded(const char* tableName, const char* gameId);
 
@@ -97,23 +109,44 @@ public:
     // Returns number of events actually popped
     size_t PopBatch(Event* events, size_t maxEvents);
 
+    // Try to pop a segment display packet from the segment queue
+    // Returns true if a packet was popped, false if queue is empty
+    bool PopSegmentDisplay(SegmentDisplayPacket& packet);
+
     // Get queue size (approximate)
     size_t GetQueueSize() const;
 
+    // Get segment queue size (approximate)
+    size_t GetSegmentQueueSize() const;
+
     // Check if queue is empty
     bool IsQueueEmpty() const;
+
+    // Check if segment queue is empty
+    bool IsSegmentQueueEmpty() const;
 
 private:
     // Push an event to the queue
     // Returns true on success, false if queue is full
     bool PushEvent(const Event& event);
 
-    // The event queue
+    // Push a segment display packet to the segment queue
+    // Returns true on success, false if queue is full
+    bool PushSegmentDisplay(const SegmentDisplayPacket& packet);
+
+    // The event queue (for small 32-byte events)
     LockFreeQueue<Event, DEFAULT_QUEUE_SIZE>* m_queue;
+
+    // The segment display queue (for large 2144-byte packets)
+    // Smaller size since packets are much larger
+    static constexpr size_t SEGMENT_QUEUE_SIZE = 256;
+    LockFreeQueue<SegmentDisplayPacket, SEGMENT_QUEUE_SIZE>* m_segmentQueue;
 
     // Statistics (atomic for thread-safe access)
     std::atomic<uint64_t> m_eventsSubmitted;
     std::atomic<uint64_t> m_eventsDropped;
+    std::atomic<uint64_t> m_segmentDisplaysSubmitted;
+    std::atomic<uint64_t> m_segmentDisplaysDropped;
 };
 
 } // namespace DOFUDP

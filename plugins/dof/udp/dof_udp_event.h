@@ -342,7 +342,7 @@ struct SegmentDisplayHeader {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(SegmentDisplayHeader) == 96, "SegmentDisplayHeader must be 96 bytes");
+static_assert(sizeof(SegmentDisplayHeader) == 72, "SegmentDisplayHeader must be 72 bytes");
 
 // Complete segment display packet
 // Note: This structure contains a flexible array member
