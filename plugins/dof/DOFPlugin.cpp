@@ -20,6 +20,9 @@
 #include "DOF/DOF.h"
 #pragma warning(pop)
 
+// UDP Broadcasting
+#include "udp/dof_udp_system.h"
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -62,6 +65,9 @@ static unsigned int nPmLamps = 0;
 static std::thread pollThread;
 
 static DOF::DOF* pDOF = nullptr;
+
+// UDP Broadcasting
+static DOFUDP::EventCollector* pEventCollector = nullptr;
 
 static void OnPollStates(void* userData);
 
@@ -143,7 +149,13 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             bool state = pinmameInputSrc.GetInputState(i);
             if (isInitialState || (wireStates[i] != state))
+            {
                pDOF->DataReceive('W', i + 1, state ? 1 : 0);
+               // UDP Broadcast
+               if (pEventCollector)
+                  pEventCollector->Wire(i + 1, state ? 1 : 0);
+               wireStates[i] = state;
+            }
          }
 
          solStates.resize(nPmSolenoids);
@@ -151,7 +163,14 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             float state = pinmameDevSrc.GetFloatState(i);
             if (isInitialState || (solStates[i] && state < 0.25f) || (!solStates[i] && state > 0.75f))
-               pDOF->DataReceive('S', i + 1, state > 0.5f ? 1 : 0);
+            {
+               bool binaryState = state > 0.5f;
+               pDOF->DataReceive('S', i + 1, binaryState ? 1 : 0);
+               // UDP Broadcast
+               if (pEventCollector)
+                  pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255));
+               solStates[i] = binaryState;
+            }
          }
 
          lampStates.resize(nPmLamps);
@@ -159,7 +178,14 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             float state = pinmameDevSrc.GetFloatState(pmLampIndex + i);
             if (isInitialState || (lampStates[i] && state < 0.25f) || (!lampStates[i] && state > 0.75f))
-               pDOF->DataReceive('L', i + 1, state > 0.5f ? 1 : 0);
+            {
+               bool binaryState = state > 0.5f;
+               pDOF->DataReceive('L', i + 1, binaryState ? 1 : 0);
+               // UDP Broadcast
+               if (pEventCollector)
+                  pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255));
+               lampStates[i] = binaryState;
+            }
          }
 
          giStates.resize(nPmGIs);
@@ -167,7 +193,14 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             float state = pinmameDevSrc.GetFloatState(pmGiIndex + i);
             if (isInitialState || (giStates[i] && state < 0.25f) || (!giStates[i] && state > 0.75f))
-               pDOF->DataReceive('G', i + 1, state > 0.5f ? 1 : 0);
+            {
+               bool binaryState = state > 0.5f;
+               pDOF->DataReceive('G', i + 1, binaryState ? 1 : 0);
+               // UDP Broadcast
+               if (pEventCollector)
+                  pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255));
+               giStates[i] = binaryState;
+            }
          }
 
          isInitialState = false;
@@ -198,6 +231,11 @@ static void OnControllerGameStart(const unsigned int eventId, void* userData, vo
       VPXTableInfo tableInfo;
       vpxApi->GetTableInfo(&tableInfo);
       pollThread = std::thread(PollThread, tableInfo.path, msg->gameId);
+
+      // UDP Broadcast: Table loaded event
+      if (pEventCollector) {
+         pEventCollector->TableLoaded(tableInfo.path, msg->gameId);
+      }
    }
 }
 
@@ -205,6 +243,12 @@ static void OnControllerGameEnd(const unsigned int eventId, void* userData, void
 {
    if (pDOF) {
       LOGI("DOFPlugin: OnControllerGameEnd");
+
+      // UDP Broadcast: Table unloaded event
+      if (pEventCollector) {
+         pEventCollector->TableUnloaded();
+      }
+
       isRunning = false;
       if (pollThread.joinable())
          pollThread.join();
@@ -347,6 +391,27 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginLoad(const uint32_t sessionId, const MsgPlug
    pConfig->SetBasePath(vpxInfo.prefPath);
 
    pDOF = new DOF::DOF();
+
+   // Initialize UDP Broadcasting
+   DOFUDP::BroadcasterConfig udpConfig;
+   udpConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPBroadcastEnabled", true);
+   udpConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPBroadcastAddress", "255.255.255.255");
+   udpConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPBroadcastPort", 7778);
+   udpConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPMaxPacketsPerSecond", 120);
+   udpConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPQueueSize", 4096);
+
+   if (udpConfig.enabled) {
+      if (DOFUDP::InitializeDOFUDPBroadcaster(udpConfig)) {
+         pEventCollector = DOFUDP::GetDOFEventCollector();
+         if (pEventCollector) {
+            LOGI("DOFPlugin: UDP Broadcasting initialized on %s:%d", udpConfig.address.c_str(), udpConfig.port);
+         }
+      } else {
+         LOGE("DOFPlugin: Failed to initialize UDP Broadcasting");
+      }
+   } else {
+      LOGI("DOFPlugin: UDP Broadcasting disabled");
+   }
 }
 
 MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
@@ -354,6 +419,13 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
    isRunning = false;
    if (pollThread.joinable())
       pollThread.join();
+
+   // Shutdown UDP Broadcasting
+   if (pEventCollector) {
+      LOGI("DOFPlugin: Shutting down UDP Broadcasting");
+      DOFUDP::ShutdownDOFUDPBroadcaster();
+      pEventCollector = nullptr;
+   }
 
    ClearDevices();
    delete[] pinmameInputSrc.inputDefs;
