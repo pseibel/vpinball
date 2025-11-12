@@ -164,8 +164,11 @@ static void PollThread(const string& tablePath, const string& gameId)
             {
                pDOF->DataReceive('W', i + 1, state ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector)
-                  pEventCollector->Wire(i + 1, state ? 1 : 0);
+               if (pEventCollector) {
+                  uint16_t groupId = pinmameInputSrc.inputDefs ? pinmameInputSrc.inputDefs[i].groupId : 0;
+                  uint16_t deviceId = pinmameInputSrc.inputDefs ? pinmameInputSrc.inputDefs[i].deviceId : 0;
+                  pEventCollector->Wire(i + 1, state ? 1 : 0, groupId, deviceId);
+               }
                wireStates[i] = state;
             }
          }
@@ -179,8 +182,11 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('S', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector)
-                  pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255));
+               if (pEventCollector) {
+                  uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[i].groupId : 0;
+                  uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[i].deviceId : 0;
+                  pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+               }
                solStates[i] = binaryState;
             }
          }
@@ -194,8 +200,11 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('L', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector)
-                  pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255));
+               if (pEventCollector) {
+                  uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmLampIndex + i].groupId : 0;
+                  uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmLampIndex + i].deviceId : 0;
+                  pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+               }
                lampStates[i] = binaryState;
             }
          }
@@ -209,8 +218,11 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('G', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector)
-                  pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255));
+               if (pEventCollector) {
+                  uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmGiIndex + i].groupId : 0;
+                  uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmGiIndex + i].deviceId : 0;
+                  pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+               }
                giStates[i] = binaryState;
             }
          }
@@ -236,6 +248,7 @@ static void PollThread(const string& tablePath, const string& gameId)
                {
                   // Broadcast event based on device groupId
                   uint16_t groupId = src.devSrc.deviceDefs[i].groupId;
+                  uint16_t deviceId = src.devSrc.deviceDefs[i].deviceId;
 
                   if (pEventCollector)
                   {
@@ -244,17 +257,17 @@ static void PollThread(const string& tablePath, const string& gameId)
                      switch (groupId)
                      {
                         case 0x0100: // GI
-                           pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255));
+                           pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                         case 0x0200: // Lamps
-                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255));
+                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                         case 0x0300: // Mechs/Solenoids
-                           pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255));
+                           pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                         default:
                            // Generic event for unknown types
-                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255));
+                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                      }
                   }

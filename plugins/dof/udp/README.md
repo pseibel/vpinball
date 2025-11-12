@@ -14,6 +14,7 @@ This system broadcasts all DOF events (solenoids, lamps, GI, wires, RGB LEDs) vi
 - **Cross-Platform**: Windows (Winsock2) and POSIX (Linux/macOS) support
 - **Low Overhead**: < 0.01% main thread impact, ~150 KB memory footprint
 - **Comprehensive Events**: Solenoid, Lamp, GI, Wire, RGB, Table lifecycle
+- **DOF Spec Compatible**: Preserves original DOF device IDs (groupId, deviceId) in all events
 - **Universal Device Sources**: Automatic discovery and broadcasting from ALL device sources
   - PinMAME ROM events (Solenoids, Lamps, GI, Wires)
   - B2S Backglass elements
@@ -54,10 +55,12 @@ struct Event {
     uint32_t magic;           // 0x58464F44 ('DOFX')
     uint64_t timestamp_us;    // Microseconds since epoch
     uint8_t type;             // Event type (see below)
-    uint8_t id;               // Device ID (0-255)
+    uint8_t id;               // Legacy device ID (0-255, for compatibility)
     uint16_t value;           // Primary value (0-65535)
     uint8_t r, g, b;          // RGB data (for RGB events)
-    uint8_t reserved[13];     // Reserved for future use
+    uint16_t groupId;         // DOF Group ID (e.g., 0x0100=GI, 0x0200=Lamps, 0x0300=Mechs)
+    uint16_t deviceId;        // DOF Device ID within group
+    uint8_t reserved[9];      // Reserved for future use
 };
 ```
 

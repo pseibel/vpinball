@@ -58,15 +58,19 @@ struct Event {
     uint32_t magic;           // MAGIC_SINGLE_EVENT (0x58464F44)
     uint64_t timestamp_us;    // Microseconds since epoch
     EventType type;           // Event type
-    uint8_t id;               // Device ID (0-255)
+    uint8_t id;               // Legacy device ID (0-255, for compatibility)
     uint16_t value;           // Primary value (0-65535)
 
-    // RGB data (for RGB events) or reserved
+    // RGB data (for RGB events)
     uint8_t r;
     uint8_t g;
     uint8_t b;
 
-    uint8_t reserved[13];     // Reserved for future use
+    // DOF Device Mapping (original IDs from DeviceDef)
+    uint16_t groupId;         // DOF Group ID (e.g., 0x0100=GI, 0x0200=Lamps, 0x0300=Mechs)
+    uint16_t deviceId;        // DOF Device ID within group
+
+    uint8_t reserved[9];      // Reserved for future use
 
     Event()
         : magic(MAGIC_SINGLE_EVENT)
@@ -77,6 +81,8 @@ struct Event {
         , r(0)
         , g(0)
         , b(0)
+        , groupId(0)
+        , deviceId(0)
     {
         memset(reserved, 0, sizeof(reserved));
     }
@@ -89,12 +95,26 @@ struct Event {
     }
 
     // Factory methods for creating events
+
+    // Legacy methods (for compatibility, groupId/deviceId will be 0)
     static Event Solenoid(uint8_t id, uint16_t value) {
         Event e;
         e.timestamp_us = GetTimestampMicros();
         e.type = EventType::Solenoid;
         e.id = id;
         e.value = value;
+        return e;
+    }
+
+    // New methods with full DOF mapping ID
+    static Event Solenoid(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId) {
+        Event e;
+        e.timestamp_us = GetTimestampMicros();
+        e.type = EventType::Solenoid;
+        e.id = id;
+        e.value = value;
+        e.groupId = groupId;
+        e.deviceId = deviceId;
         return e;
     }
 
@@ -107,12 +127,34 @@ struct Event {
         return e;
     }
 
+    static Event Lamp(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId) {
+        Event e;
+        e.timestamp_us = GetTimestampMicros();
+        e.type = EventType::Lamp;
+        e.id = id;
+        e.value = value;
+        e.groupId = groupId;
+        e.deviceId = deviceId;
+        return e;
+    }
+
     static Event GI(uint8_t id, uint16_t value) {
         Event e;
         e.timestamp_us = GetTimestampMicros();
         e.type = EventType::GI;
         e.id = id;
         e.value = value;
+        return e;
+    }
+
+    static Event GI(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId) {
+        Event e;
+        e.timestamp_us = GetTimestampMicros();
+        e.type = EventType::GI;
+        e.id = id;
+        e.value = value;
+        e.groupId = groupId;
+        e.deviceId = deviceId;
         return e;
     }
 
@@ -128,12 +170,37 @@ struct Event {
         return e;
     }
 
+    static Event RGB(uint8_t id, uint8_t r, uint8_t g, uint8_t b, uint16_t groupId, uint16_t deviceId) {
+        Event e;
+        e.timestamp_us = GetTimestampMicros();
+        e.type = EventType::RGB;
+        e.id = id;
+        e.r = r;
+        e.g = g;
+        e.b = b;
+        e.value = 0;
+        e.groupId = groupId;
+        e.deviceId = deviceId;
+        return e;
+    }
+
     static Event Wire(uint8_t id, uint16_t value) {
         Event e;
         e.timestamp_us = GetTimestampMicros();
         e.type = EventType::Wire;
         e.id = id;
         e.value = value;
+        return e;
+    }
+
+    static Event Wire(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId) {
+        Event e;
+        e.timestamp_us = GetTimestampMicros();
+        e.type = EventType::Wire;
+        e.id = id;
+        e.value = value;
+        e.groupId = groupId;
+        e.deviceId = deviceId;
         return e;
     }
 

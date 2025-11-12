@@ -43,26 +43,31 @@ public:
     // id: Solenoid ID (1-255)
     // value: Solenoid power (0-255)
     void Solenoid(uint8_t id, uint16_t value);
+    void Solenoid(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId);
 
     // Submit a lamp event
     // id: Lamp ID (1-255)
     // value: Lamp brightness (0-255)
     void Lamp(uint8_t id, uint16_t value);
+    void Lamp(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId);
 
     // Submit a GI (General Illumination) event
     // id: GI string ID (1-255)
     // value: GI brightness (0-255)
     void GI(uint8_t id, uint16_t value);
+    void GI(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId);
 
     // Submit an RGB LED event
     // id: LED ID (1-255)
     // r, g, b: RGB color components (0-255)
     void RGB(uint8_t id, uint8_t r, uint8_t g, uint8_t b);
+    void RGB(uint8_t id, uint8_t r, uint8_t g, uint8_t b, uint16_t groupId, uint16_t deviceId);
 
     // Submit a wire/switch event
     // id: Wire ID (1-255)
     // value: Wire state (0=off, 1=on)
     void Wire(uint8_t id, uint16_t value);
+    void Wire(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId);
 
     // Submit a table loaded event
     void TableLoaded(const char* tableName, const char* gameId);

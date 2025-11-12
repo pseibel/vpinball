@@ -29,9 +29,29 @@ void EventCollector::Solenoid(uint8_t id, uint16_t value)
     }
 }
 
+void EventCollector::Solenoid(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId)
+{
+    Event event = Event::Solenoid(id, value, groupId, deviceId);
+    if (!PushEvent(event)) {
+        m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        m_eventsSubmitted.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 void EventCollector::Lamp(uint8_t id, uint16_t value)
 {
     Event event = Event::Lamp(id, value);
+    if (!PushEvent(event)) {
+        m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        m_eventsSubmitted.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void EventCollector::Lamp(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId)
+{
+    Event event = Event::Lamp(id, value, groupId, deviceId);
     if (!PushEvent(event)) {
         m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
     } else {
@@ -49,6 +69,16 @@ void EventCollector::GI(uint8_t id, uint16_t value)
     }
 }
 
+void EventCollector::GI(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId)
+{
+    Event event = Event::GI(id, value, groupId, deviceId);
+    if (!PushEvent(event)) {
+        m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        m_eventsSubmitted.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 void EventCollector::RGB(uint8_t id, uint8_t r, uint8_t g, uint8_t b)
 {
     Event event = Event::RGB(id, r, g, b);
@@ -59,9 +89,29 @@ void EventCollector::RGB(uint8_t id, uint8_t r, uint8_t g, uint8_t b)
     }
 }
 
+void EventCollector::RGB(uint8_t id, uint8_t r, uint8_t g, uint8_t b, uint16_t groupId, uint16_t deviceId)
+{
+    Event event = Event::RGB(id, r, g, b, groupId, deviceId);
+    if (!PushEvent(event)) {
+        m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        m_eventsSubmitted.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 void EventCollector::Wire(uint8_t id, uint16_t value)
 {
     Event event = Event::Wire(id, value);
+    if (!PushEvent(event)) {
+        m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        m_eventsSubmitted.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void EventCollector::Wire(uint8_t id, uint16_t value, uint16_t groupId, uint16_t deviceId)
+{
+    Event event = Event::Wire(id, value, groupId, deviceId);
     if (!PushEvent(event)) {
         m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
     } else {
