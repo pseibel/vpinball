@@ -345,11 +345,20 @@ struct SegmentDisplayHeader {
 static_assert(sizeof(SegmentDisplayHeader) == 72, "SegmentDisplayHeader must be 72 bytes");
 
 // Complete segment display packet
-// Note: This structure contains a flexible array member
+//
+// This structure contains segment brightness data for score/alphanumeric displays.
+// Each display element (digit/character) has 16 float values representing individual
+// segment brightness (0.0 = off, 1.0 = full brightness).
+//
+// Example: A 6-digit 7-segment display has:
+// - nElements = 6
+// - segmentData contains 6 * 16 = 96 floats
+// - Packet size = 72 (header) + 96*4 (floats) = 456 bytes
+//
 // Actual size = sizeof(SegmentDisplayHeader) + (nElements * 16 * sizeof(float))
 struct SegmentDisplayPacket {
     SegmentDisplayHeader header;
-    float segmentData[MAX_SEGMENT_ELEMENTS * SEGMENTS_PER_ELEMENT]; // Max size
+    float segmentData[MAX_SEGMENT_ELEMENTS * SEGMENTS_PER_ELEMENT]; // Max size: 32*16 floats
 
     SegmentDisplayPacket()
         : header()

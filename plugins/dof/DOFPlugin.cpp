@@ -77,10 +77,13 @@ struct AdditionalDevSrc {
 static std::vector<AdditionalDevSrc> additionalDevSources;
 
 // Segment Display Sources
+// Stores discovered segment display sources (PinMAME, FlexDMD, custom displays)
+// Each source provides segment brightness data for score/alphanumeric displays
+// Frame IDs are tracked to avoid broadcasting duplicate frames
 struct SegmentDisplaySource {
-   SegSrcId segSrc;
-   std::string endpointName;
-   unsigned int nElements;
+   SegSrcId segSrc;                     // Source interface from ControllerPlugin API
+   std::string endpointName;            // Endpoint name (e.g., "PinMAME", "FlexDMD")
+   unsigned int nElements;              // Number of display elements (e.g., 6 for 6-digit display)
    std::vector<uint32_t> lastFrameIds;  // Track frame IDs to avoid duplicate sends
 };
 static std::vector<SegmentDisplaySource> segmentDisplaySources;
@@ -290,7 +293,17 @@ static void PollThread(const string& tablePath, const string& gameId)
             }
          }
 
-         // Poll segment display sources
+         ///////////////////////////////////////////////////////////////////////////
+         // Poll Segment Display Sources
+         //
+         // Queries all discovered segment display sources (PinMAME, FlexDMD, etc.)
+         // for current display state. Each display provides:
+         // - Frame ID: Increments when display content changes
+         // - Segment data: 16 float values per element (brightness per segment)
+         //
+         // Only broadcasts frames when frame ID changes to avoid redundant packets.
+         // Sent to Score stream (port 7781) for external display rendering.
+         ///////////////////////////////////////////////////////////////////////////
          for (size_t srcIdx = 0; srcIdx < segmentDisplaySources.size(); srcIdx++)
          {
             auto& src = segmentDisplaySources[srcIdx];
@@ -501,6 +514,24 @@ static void OnInputSrcChanged(const unsigned int eventId, void* userData, void* 
    LOGI("DOFPlugin: OnInputSrcChanged - Found %d PinMAME inputs", pinmameInputSrc.nInputs);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// OnSegSrcChanged - Segment Display Source Discovery
+//
+// Called when segment display sources are added, modified, or removed.
+// Discovers all segment display sources (PinMAME score displays, FlexDMD,
+// custom alphanumeric displays) and stores their metadata for polling.
+//
+// Uses two-phase query:
+// 1. Query with null buffer to get count
+// 2. Allocate buffer and query again to get actual data
+//
+// Each source provides:
+// - Display ID and group ID for identification
+// - Number of elements (e.g., 6 for 6-digit display)
+// - Element types (7-seg, 14-seg, 16-seg, etc.)
+// - Hardware hints (VFD, LED, Plasma) for rendering
+// - GetState() callback to retrieve current segment brightness
+///////////////////////////////////////////////////////////////////////////////
 static void OnSegSrcChanged(const unsigned int eventId, void* userData, void* msgData)
 {
    std::lock_guard<std::mutex> lock(sourceMutex);
@@ -508,7 +539,7 @@ static void OnSegSrcChanged(const unsigned int eventId, void* userData, void* ms
    // Clear existing segment display sources
    segmentDisplaySources.clear();
 
-   // Query all segment display sources
+   // Query all segment display sources (phase 1: get count)
    GetSegSrcMsg getSrcMsg = { 0, 0, nullptr };
    msgApi->BroadcastMsg(endpointId, getSegSrcId, &getSrcMsg);
 
@@ -517,7 +548,7 @@ static void OnSegSrcChanged(const unsigned int eventId, void* userData, void* ms
       return;
    }
 
-   // Allocate and query again with proper buffer
+   // Query all segment display sources (phase 2: get actual data)
    getSrcMsg.maxEntryCount = getSrcMsg.count;
    getSrcMsg.count = 0;
    getSrcMsg.entries = new SegSrcId[getSrcMsg.maxEntryCount];
@@ -634,6 +665,11 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginLoad(const uint32_t sessionId, const MsgPlug
    }
 
    // Initialize UDP Broadcasting - Score Stream (Segment Displays)
+   // Broadcasts segment display frames (score/alphanumeric displays) with:
+   // - 16 float values per element (segment brightness: 0.0-1.0)
+   // - Hardware hints (VFD, LED, Plasma) for accurate rendering
+   // - Frame IDs to enable client-side duplicate detection
+   // - Lower rate limit (60 pps) since displays update less frequently
    DOFUDP::BroadcasterConfig scoreConfig;
    scoreConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamEnabled", true);
    scoreConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamAddress", "255.255.255.255");

@@ -134,11 +134,23 @@ private:
     // Returns true on success, false if queue is full
     bool PushSegmentDisplay(const SegmentDisplayPacket& packet);
 
+    ///////////////////////////////////////////////////////////////////////////
+    // Dual Queue Architecture
+    //
+    // Regular events (32 bytes):  Queue of 4096 entries = ~128 KB
+    // Segment packets (2144 bytes max): Queue of 256 entries = ~548 KB
+    //
+    // Separate queues allow:
+    // 1. Different sizing strategies (frequent small vs infrequent large)
+    // 2. Priority handling in broadcaster (segment displays checked first)
+    // 3. Better memory locality (hot/cold data separation)
+    ///////////////////////////////////////////////////////////////////////////
+
     // The event queue (for small 32-byte events)
     LockFreeQueue<Event, DEFAULT_QUEUE_SIZE>* m_queue;
 
     // The segment display queue (for large 2144-byte packets)
-    // Smaller size since packets are much larger
+    // Smaller size since packets are much larger and less frequent
     static constexpr size_t SEGMENT_QUEUE_SIZE = 256;
     LockFreeQueue<SegmentDisplayPacket, SEGMENT_QUEUE_SIZE>* m_segmentQueue;
 
