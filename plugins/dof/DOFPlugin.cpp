@@ -78,8 +78,9 @@ static std::thread pollThread;
 
 static DOF::DOF* pDOF = nullptr;
 
-// UDP Broadcasting
-static DOFUDP::EventCollector* pEventCollector = nullptr;
+// UDP Broadcasting - Multi-Stream
+static DOFUDP::EventCollector* pDeviceEventCollector = nullptr; // Device events (Port 7778)
+static DOFUDP::EventCollector* pRGBEventCollector = nullptr;    // RGB events (Port 7779)
 
 static void OnPollStates(void* userData);
 
@@ -164,10 +165,10 @@ static void PollThread(const string& tablePath, const string& gameId)
             {
                pDOF->DataReceive('W', i + 1, state ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector) {
+               if (pDeviceEventCollector) {
                   uint16_t groupId = pinmameInputSrc.inputDefs ? pinmameInputSrc.inputDefs[i].groupId : 0;
                   uint16_t deviceId = pinmameInputSrc.inputDefs ? pinmameInputSrc.inputDefs[i].deviceId : 0;
-                  pEventCollector->Wire(i + 1, state ? 1 : 0, groupId, deviceId);
+                  pDeviceEventCollector->Wire(i + 1, state ? 1 : 0, groupId, deviceId);
                }
                wireStates[i] = state;
             }
@@ -182,10 +183,10 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('S', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector) {
+               if (pDeviceEventCollector) {
                   uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[i].groupId : 0;
                   uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[i].deviceId : 0;
-                  pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+                  pDeviceEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                }
                solStates[i] = binaryState;
             }
@@ -200,10 +201,10 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('L', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector) {
+               if (pDeviceEventCollector) {
                   uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmLampIndex + i].groupId : 0;
                   uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmLampIndex + i].deviceId : 0;
-                  pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+                  pDeviceEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                }
                lampStates[i] = binaryState;
             }
@@ -218,10 +219,10 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('G', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pEventCollector) {
+               if (pDeviceEventCollector) {
                   uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmGiIndex + i].groupId : 0;
                   uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmGiIndex + i].deviceId : 0;
-                  pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+                  pDeviceEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                }
                giStates[i] = binaryState;
             }
@@ -250,24 +251,24 @@ static void PollThread(const string& tablePath, const string& gameId)
                   uint16_t groupId = src.devSrc.deviceDefs[i].groupId;
                   uint16_t deviceId = src.devSrc.deviceDefs[i].deviceId;
 
-                  if (pEventCollector)
+                  if (pDeviceEventCollector)
                   {
                      // Map groupId to event types
                      // 0x0100 = GI, 0x0200 = Lamps, 0x0300 = Mechs, etc.
                      switch (groupId)
                      {
                         case 0x0100: // GI
-                           pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+                           pDeviceEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                         case 0x0200: // Lamps
-                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+                           pDeviceEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                         case 0x0300: // Mechs/Solenoids
-                           pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+                           pDeviceEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                         default:
                            // Generic event for unknown types
-                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+                           pDeviceEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
                            break;
                      }
                   }
@@ -307,8 +308,8 @@ static void OnControllerGameStart(const unsigned int eventId, void* userData, vo
       pollThread = std::thread(PollThread, tableInfo.path, msg->gameId);
 
       // UDP Broadcast: Table loaded event
-      if (pEventCollector) {
-         pEventCollector->TableLoaded(tableInfo.path, msg->gameId);
+      if (pDeviceEventCollector) {
+         pDeviceEventCollector->TableLoaded(tableInfo.path, msg->gameId);
       }
    }
 }
@@ -319,8 +320,8 @@ static void OnControllerGameEnd(const unsigned int eventId, void* userData, void
       LOGI("DOFPlugin: OnControllerGameEnd");
 
       // UDP Broadcast: Table unloaded event
-      if (pEventCollector) {
-         pEventCollector->TableUnloaded();
+      if (pDeviceEventCollector) {
+         pDeviceEventCollector->TableUnloaded();
       }
 
       isRunning = false;
@@ -495,25 +496,46 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginLoad(const uint32_t sessionId, const MsgPlug
 
    pDOF = new DOF::DOF();
 
-   // Initialize UDP Broadcasting
-   DOFUDP::BroadcasterConfig udpConfig;
-   udpConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPBroadcastEnabled", true);
-   udpConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPBroadcastAddress", "255.255.255.255");
-   udpConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPBroadcastPort", 7778);
-   udpConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPMaxPacketsPerSecond", 120);
-   udpConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPQueueSize", 4096);
+   // Initialize UDP Broadcasting - Device Stream (Solenoid, Lamp, GI, Wire)
+   DOFUDP::BroadcasterConfig deviceConfig;
+   deviceConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamEnabled", true);
+   deviceConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamAddress", "255.255.255.255");
+   deviceConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamPort", 7778);
+   deviceConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamMaxPacketsPerSecond", 120);
+   deviceConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamQueueSize", 4096);
 
-   if (udpConfig.enabled) {
-      if (DOFUDP::InitializeDOFUDPBroadcaster(udpConfig)) {
-         pEventCollector = DOFUDP::GetDOFEventCollector();
-         if (pEventCollector) {
-            LOGI("DOFPlugin: UDP Broadcasting initialized on %s:%d", udpConfig.address.c_str(), udpConfig.port);
+   if (deviceConfig.enabled) {
+      if (DOFUDP::InitializeStream(DOFUDP::StreamType::DEVICE, deviceConfig)) {
+         pDeviceEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::DEVICE);
+         if (pDeviceEventCollector) {
+            LOGI("DOFPlugin: UDP Device Stream initialized on %s:%d", deviceConfig.address.c_str(), deviceConfig.port);
          }
       } else {
-         LOGE("DOFPlugin: Failed to initialize UDP Broadcasting");
+         LOGE("DOFPlugin: Failed to initialize UDP Device Stream");
       }
    } else {
-      LOGI("DOFPlugin: UDP Broadcasting disabled");
+      LOGI("DOFPlugin: UDP Device Stream disabled");
+   }
+
+   // Initialize UDP Broadcasting - RGB Stream
+   DOFUDP::BroadcasterConfig rgbConfig;
+   rgbConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamEnabled", true);
+   rgbConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamAddress", "255.255.255.255");
+   rgbConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamPort", 7779);
+   rgbConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamMaxPacketsPerSecond", 120);
+   rgbConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamQueueSize", 4096);
+
+   if (rgbConfig.enabled) {
+      if (DOFUDP::InitializeStream(DOFUDP::StreamType::RGB, rgbConfig)) {
+         pRGBEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::RGB);
+         if (pRGBEventCollector) {
+            LOGI("DOFPlugin: UDP RGB Stream initialized on %s:%d", rgbConfig.address.c_str(), rgbConfig.port);
+         }
+      } else {
+         LOGE("DOFPlugin: Failed to initialize UDP RGB Stream");
+      }
+   } else {
+      LOGI("DOFPlugin: UDP RGB Stream disabled");
    }
 }
 
@@ -523,11 +545,12 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
    if (pollThread.joinable())
       pollThread.join();
 
-   // Shutdown UDP Broadcasting
-   if (pEventCollector) {
-      LOGI("DOFPlugin: Shutting down UDP Broadcasting");
-      DOFUDP::ShutdownDOFUDPBroadcaster();
-      pEventCollector = nullptr;
+   // Shutdown UDP Broadcasting - All Streams
+   if (pDeviceEventCollector || pRGBEventCollector) {
+      LOGI("DOFPlugin: Shutting down UDP Broadcasting streams");
+      DOFUDP::ShutdownAllStreams();
+      pDeviceEventCollector = nullptr;
+      pRGBEventCollector = nullptr;
    }
 
    ClearDevices();

@@ -1,18 +1,38 @@
-# DOF UDP Broadcasting
+# DOF UDP Broadcasting - Multi-Stream Architecture
 
 UDP event broadcasting system for VPinball DOF (Direct Output Framework) plugin.
 
 ## Overview
 
-This system broadcasts all DOF events (solenoids, lamps, GI, wires, RGB LEDs) via UDP packets to external controllers, LED systems, monitoring tools, or any other UDP-capable application.
+This system broadcasts DOF events via **multiple independent UDP streams** to external controllers, LED systems, monitoring tools, or any other UDP-capable application. Each stream type operates independently with its own broadcaster, thread, socket, and configuration.
+
+## Multi-Stream Design
+
+The system supports separate UDP streams for different event categories:
+
+| Stream | Default Port | Event Types | Status |
+|--------|--------------|-------------|---------|
+| **DEVICE** | 7778 | Solenoid, Lamp, GI, Wire | ✅ Implemented |
+| **RGB** | 7779 | RGB LED events | ✅ Implemented |
+| **DMD** | 7780 | Display matrix frames | 🔮 Future |
+| **SCORE** | 7781 | Segment/score displays | 🔮 Future |
+| **AUDIO** | 7782 | Audio streams | 🔮 Future |
+
+### Why Multiple Streams?
+
+- **Selective Subscribing**: Clients only receive events they need
+- **Traffic Optimization**: Large events (DMD frames ~4-32 KB) don't clog small device events
+- **Independent Configuration**: Different ports, addresses, and rate limits per stream
+- **Parallel Processing**: Clients can process different event types on different threads
+- **Backward Compatibility**: Existing clients continue to work on Device stream (port 7778)
 
 ## Features
 
 - **Lock-free Architecture**: Zero-copy, non-blocking event submission from game thread
 - **Event Batching**: Packs up to 20 events per UDP packet for efficiency
-- **Rate Limiting**: Configurable packet rate to prevent network flooding
+- **Per-Stream Rate Limiting**: Configurable packet rate per stream to prevent network flooding
 - **Cross-Platform**: Windows (Winsock2) and POSIX (Linux/macOS) support
-- **Low Overhead**: < 0.01% main thread impact, ~150 KB memory footprint
+- **Low Overhead**: < 0.01% main thread impact per stream, ~150 KB memory per stream
 - **Comprehensive Events**: Solenoid, Lamp, GI, Wire, RGB, Table lifecycle
 - **DOF Spec Compatible**: Preserves original DOF device IDs (groupId, deviceId) in all events
 - **Universal Device Sources**: Automatic discovery and broadcasting from ALL device sources
@@ -23,26 +43,51 @@ This system broadcasts all DOF events (solenoids, lamps, GI, wires, RGB LEDs) vi
 
 ## Configuration
 
-Add these settings to your VPinballX configuration file:
+Each stream can be independently configured. Add these settings to your VPinballX configuration file:
+
+### Device Stream Configuration (Solenoid, Lamp, GI, Wire)
 
 ```ini
 [DOF]
-UDPBroadcastEnabled=1
-UDPBroadcastAddress=255.255.255.255
-UDPBroadcastPort=7778
-UDPMaxPacketsPerSecond=120
-UDPQueueSize=4096
+UDPDeviceStreamEnabled=1
+UDPDeviceStreamAddress=255.255.255.255
+UDPDeviceStreamPort=7778
+UDPDeviceStreamMaxPacketsPerSecond=120
+UDPDeviceStreamQueueSize=4096
+```
+
+### RGB Stream Configuration
+
+```ini
+[DOF]
+UDPRGBStreamEnabled=1
+UDPRGBStreamAddress=255.255.255.255
+UDPRGBStreamPort=7779
+UDPRGBStreamMaxPacketsPerSecond=120
+UDPRGBStreamQueueSize=4096
 ```
 
 ### Configuration Options
 
+#### Device Stream Settings
+
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `UDPBroadcastEnabled` | bool | `true` | Enable/disable UDP broadcasting |
-| `UDPBroadcastAddress` | string | `255.255.255.255` | Target IP address (supports broadcast) |
-| `UDPBroadcastPort` | int | `7778` | Target UDP port |
-| `UDPMaxPacketsPerSecond` | int | `120` | Rate limit (0 = unlimited) |
-| `UDPQueueSize` | int | `4096` | Event queue size (must be power of 2) |
+| `UDPDeviceStreamEnabled` | bool | `true` | Enable/disable Device stream |
+| `UDPDeviceStreamAddress` | string | `255.255.255.255` | Target IP address (supports broadcast) |
+| `UDPDeviceStreamPort` | int | `7778` | Target UDP port |
+| `UDPDeviceStreamMaxPacketsPerSecond` | int | `120` | Rate limit (0 = unlimited) |
+| `UDPDeviceStreamQueueSize` | int | `4096` | Event queue size (must be power of 2) |
+
+#### RGB Stream Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `UDPRGBStreamEnabled` | bool | `true` | Enable/disable RGB stream |
+| `UDPRGBStreamAddress` | string | `255.255.255.255` | Target IP address (supports broadcast) |
+| `UDPRGBStreamPort` | int | `7779` | Target UDP port |
+| `UDPRGBStreamMaxPacketsPerSecond` | int | `120` | Rate limit (0 = unlimited) |
+| `UDPRGBStreamQueueSize` | int | `4096` | Event queue size (must be power of 2) |
 
 ## Protocol
 

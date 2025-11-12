@@ -3,116 +3,221 @@
 #include "dof_udp_system.h"
 
 #include <mutex>
+#include <map>
 
 namespace DOFUDP {
 
 ///////////////////////////////////////////////////////////////////////////////
-// Global State
+// Multi-Stream State
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace {
-    // Global instances (initialized on first use, destroyed at shutdown)
-    EventCollector* g_collector = nullptr;
-    UDPBroadcaster* g_broadcaster = nullptr;
+    // Stream instance holds all resources for one UDP stream
+    struct StreamInstance {
+        EventCollector* collector = nullptr;
+        UDPBroadcaster* broadcaster = nullptr;
+        bool initialized = false;
+    };
+
+    // Global map of active streams
+    std::map<StreamType, StreamInstance> g_streams;
     std::mutex g_mutex;
-    bool g_initialized = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Public API Implementation
+// Multi-Stream API Implementation
 ///////////////////////////////////////////////////////////////////////////////
 
-bool InitializeDOFUDPBroadcaster(const BroadcasterConfig& config)
+bool InitializeStream(StreamType type, const BroadcasterConfig& config)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
 
-    // Already initialized?
-    if (g_initialized)
-        return false;
+    // Check if stream is already initialized
+    auto it = g_streams.find(type);
+    if (it != g_streams.end() && it->second.initialized) {
+        return false; // Already initialized
+    }
 
     // Check if broadcasting is enabled
-    if (!config.enabled)
+    if (!config.enabled) {
         return false;
+    }
+
+    // Create or get stream instance
+    StreamInstance& stream = g_streams[type];
 
     // Create event collector
-    g_collector = new EventCollector(config.queueSize);
-    if (!g_collector)
+    stream.collector = new EventCollector(config.queueSize);
+    if (!stream.collector) {
         return false;
+    }
 
     // Create broadcaster
-    g_broadcaster = new UDPBroadcaster();
-    if (!g_broadcaster) {
-        delete g_collector;
-        g_collector = nullptr;
+    stream.broadcaster = new UDPBroadcaster();
+    if (!stream.broadcaster) {
+        delete stream.collector;
+        stream.collector = nullptr;
         return false;
     }
 
     // Start broadcaster
-    if (!g_broadcaster->Start(config, g_collector)) {
-        delete g_broadcaster;
-        delete g_collector;
-        g_broadcaster = nullptr;
-        g_collector = nullptr;
+    if (!stream.broadcaster->Start(config, stream.collector)) {
+        delete stream.broadcaster;
+        delete stream.collector;
+        stream.broadcaster = nullptr;
+        stream.collector = nullptr;
         return false;
     }
 
-    g_initialized = true;
+    stream.initialized = true;
     return true;
 }
 
-void ShutdownDOFUDPBroadcaster()
+void ShutdownStream(StreamType type)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
 
-    if (!g_initialized)
-        return;
+    auto it = g_streams.find(type);
+    if (it == g_streams.end() || !it->second.initialized) {
+        return; // Not initialized
+    }
+
+    StreamInstance& stream = it->second;
 
     // Stop broadcaster (this waits for thread to finish)
-    if (g_broadcaster) {
-        g_broadcaster->Stop();
-        delete g_broadcaster;
-        g_broadcaster = nullptr;
+    if (stream.broadcaster) {
+        stream.broadcaster->Stop();
+        delete stream.broadcaster;
+        stream.broadcaster = nullptr;
     }
 
     // Delete collector
-    if (g_collector) {
-        delete g_collector;
-        g_collector = nullptr;
+    if (stream.collector) {
+        delete stream.collector;
+        stream.collector = nullptr;
     }
 
-    g_initialized = false;
+    stream.initialized = false;
+    g_streams.erase(it);
 }
 
-EventCollector* GetDOFEventCollector()
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-    return g_collector;
-}
-
-bool IsDOFUDPBroadcasterRunning()
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-    return g_initialized && g_broadcaster && g_broadcaster->IsRunning();
-}
-
-Statistics GetDOFUDPStatistics()
+void ShutdownAllStreams()
 {
     std::lock_guard<std::mutex> lock(g_mutex);
 
-    if (g_initialized && g_broadcaster) {
-        return g_broadcaster->GetStatistics();
+    for (auto& pair : g_streams) {
+        StreamInstance& stream = pair.second;
+
+        if (stream.initialized) {
+            // Stop broadcaster
+            if (stream.broadcaster) {
+                stream.broadcaster->Stop();
+                delete stream.broadcaster;
+                stream.broadcaster = nullptr;
+            }
+
+            // Delete collector
+            if (stream.collector) {
+                delete stream.collector;
+                stream.collector = nullptr;
+            }
+
+            stream.initialized = false;
+        }
+    }
+
+    g_streams.clear();
+}
+
+EventCollector* GetEventCollector(StreamType type)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    auto it = g_streams.find(type);
+    if (it == g_streams.end() || !it->second.initialized) {
+        return nullptr;
+    }
+
+    return it->second.collector;
+}
+
+bool IsStreamRunning(StreamType type)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    auto it = g_streams.find(type);
+    if (it == g_streams.end() || !it->second.initialized) {
+        return false;
+    }
+
+    const StreamInstance& stream = it->second;
+    return stream.broadcaster && stream.broadcaster->IsRunning();
+}
+
+Statistics GetStreamStatistics(StreamType type)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    auto it = g_streams.find(type);
+    if (it == g_streams.end() || !it->second.initialized) {
+        return Statistics();
+    }
+
+    const StreamInstance& stream = it->second;
+    if (stream.broadcaster) {
+        return stream.broadcaster->GetStatistics();
     }
 
     return Statistics();
 }
 
-void ResetDOFUDPStatistics()
+void ResetStreamStatistics(StreamType type)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
 
-    if (g_initialized && g_broadcaster) {
-        g_broadcaster->ResetStatistics();
+    auto it = g_streams.find(type);
+    if (it == g_streams.end() || !it->second.initialized) {
+        return;
     }
+
+    StreamInstance& stream = it->second;
+    if (stream.broadcaster) {
+        stream.broadcaster->ResetStatistics();
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Legacy API Implementation (delegates to DEVICE stream)
+///////////////////////////////////////////////////////////////////////////////
+
+bool InitializeDOFUDPBroadcaster(const BroadcasterConfig& config)
+{
+    return InitializeStream(StreamType::DEVICE, config);
+}
+
+void ShutdownDOFUDPBroadcaster()
+{
+    ShutdownStream(StreamType::DEVICE);
+}
+
+EventCollector* GetDOFEventCollector()
+{
+    return GetEventCollector(StreamType::DEVICE);
+}
+
+bool IsDOFUDPBroadcasterRunning()
+{
+    return IsStreamRunning(StreamType::DEVICE);
+}
+
+Statistics GetDOFUDPStatistics()
+{
+    return GetStreamStatistics(StreamType::DEVICE);
+}
+
+void ResetDOFUDPStatistics()
+{
+    ResetStreamStatistics(StreamType::DEVICE);
 }
 
 } // namespace DOFUDP
