@@ -14,6 +14,11 @@ This system broadcasts all DOF events (solenoids, lamps, GI, wires, RGB LEDs) vi
 - **Cross-Platform**: Windows (Winsock2) and POSIX (Linux/macOS) support
 - **Low Overhead**: < 0.01% main thread impact, ~150 KB memory footprint
 - **Comprehensive Events**: Solenoid, Lamp, GI, Wire, RGB, Table lifecycle
+- **Universal Device Sources**: Automatic discovery and broadcasting from ALL device sources
+  - PinMAME ROM events (Solenoids, Lamps, GI, Wires)
+  - B2S Backglass elements
+  - Custom controller plugins
+  - Any future plugin implementing device sources
 
 ## Configuration
 
@@ -224,21 +229,34 @@ while True:
 3. **Reduce rate limit**: Lower `UDPMaxPacketsPerSecond`
 4. **Check CPU**: Main thread impact should be < 0.01%
 
-## Future Extensions
+## Implementation Phases
 
-This implementation is designed for incremental extension:
+### ✅ Phase 1: PinMAME Events (Completed)
 
-### Phase 2: B2S Backglass Events (Planned)
+- Core UDP broadcasting infrastructure
+- PinMAME ROM-based events (Solenoid, Lamp, GI, Wire)
+- Lock-free queue and batching
+- Comprehensive unit tests
 
-- BackglassLamp (type 10)
-- BackglassLED (type 11)
-- BackglassRGB (type 12)
+### ✅ Phase 2: Universal Device Sources (Completed)
 
-### Phase 3: Universal Device Sources (Planned)
+- Automatic discovery of **all** controller plugins
+- Dynamic event type mapping based on groupId
+- Support for B2S, custom controllers, and future plugins
+- Extensible architecture for any device source
 
-- Automatic discovery of all controller plugins
-- Dynamic event type mapping
-- Plugin-specific metadata in packets
+Device GroupID Mapping:
+- `0x0100` → GI events
+- `0x0200` → Lamp events
+- `0x0300` → Solenoid/Mech events
+- Unknown → Default to Lamp events
+
+### Future Extensions
+
+- Enhanced event metadata (source plugin name, device names)
+- RGB event detection and broadcasting
+- Per-source event filtering configuration
+- Plugin-specific event types
 
 ## License
 
