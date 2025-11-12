@@ -1,6 +1,6 @@
-# DOF UDP Broadcasting Tests
+# UDP Broadcasting Plugin Tests
 
-Comprehensive unit tests for the UDP event broadcasting system.
+Comprehensive unit tests for the UDP event broadcasting plugin.
 
 ## Test Coverage
 
@@ -68,20 +68,20 @@ curl -L https://raw.githubusercontent.com/doctest/doctest/master/doctest/doctest
 # From vpinball root directory
 g++ -std=c++20 \
     -I. \
-    -Iplugins/dof/udp \
+    -Iplugins/udp-broadcast \
     -Ithird-party/include \
     -pthread \
-    tests/dof-udp-test.cpp \
-    plugins/dof/udp/dof_event_collector.cpp \
-    plugins/dof/udp/dof_udp_broadcaster.cpp \
-    plugins/dof/udp/dof_udp_system.cpp \
-    -o dof-udp-test
+    tests/udp-broadcast-test.cpp \
+    plugins/udp-broadcast/dof_event_collector.cpp \
+    plugins/udp-broadcast/dof_udp_broadcaster.cpp \
+    plugins/udp-broadcast/dof_udp_system.cpp \
+    -o udp-broadcast-test
 ```
 
 ### Run All Tests
 
 ```bash
-./dof-udp-test
+./udp-broadcast-test
 ```
 
 Expected output on success:
@@ -95,48 +95,48 @@ Expected output on success:
 
 ```bash
 # Event protocol tests
-./dof-udp-test --test-suite="DOF UDP Event Protocol"
+./udp-broadcast-test --test-suite="DOF UDP Event Protocol"
 
 # Lock-free queue tests
-./dof-udp-test --test-suite="Lock-Free Queue"
+./udp-broadcast-test --test-suite="Lock-Free Queue"
 
 # Event collector tests
-./dof-udp-test --test-suite="Event Collector"
+./udp-broadcast-test --test-suite="Event Collector"
 
 # Segment display tests
-./dof-udp-test --test-suite="Segment Display Support"
+./udp-broadcast-test --test-suite="Segment Display Support"
 
 # Table information tests
-./dof-udp-test --test-suite="Table information support"
+./udp-broadcast-test --test-suite="Table information support"
 
 # UDP system integration tests
-./dof-udp-test --test-suite="UDP System Integration"
+./udp-broadcast-test --test-suite="UDP System Integration"
 
 # Thread safety tests
-./dof-udp-test --test-suite="Thread Safety"
+./udp-broadcast-test --test-suite="Thread Safety"
 ```
 
 ### Run Specific Test Cases
 
 ```bash
 # Test event structure size
-./dof-udp-test --test-case="Event structure size"
+./udp-broadcast-test --test-case="Event structure size"
 
 # Test queue operations
-./dof-udp-test --test-case="Basic push and pop"
+./udp-broadcast-test --test-case="Basic push and pop"
 
 # Test statistics
-./dof-udp-test --test-case="Statistics tracking"
+./udp-broadcast-test --test-case="Statistics tracking"
 ```
 
 ### Verbose Output
 
 ```bash
 # Show all successful assertions
-./dof-udp-test --success
+./udp-broadcast-test --success
 
 # Show detailed test execution
-./dof-udp-test --success --duration=true
+./udp-broadcast-test --success --duration=true
 ```
 
 ## Test Details
@@ -188,7 +188,7 @@ Multi-threaded testing:
 Run with timing to measure performance:
 
 ```bash
-./dof-udp-test --duration=true --test-suite="Lock-Free Queue"
+./udp-broadcast-test --duration=true --test-suite="Lock-Free Queue"
 ```
 
 Expected performance (typical hardware):
@@ -255,13 +255,13 @@ jobs:
 
       - name: Build tests
         run: |
-          g++ -std=c++20 -I. -Iplugins/dof/udp -Ithird-party/include -pthread \
-              tests/dof-udp-test.cpp \
-              plugins/dof/udp/*.cpp \
-              -o dof-udp-test
+          g++ -std=c++20 -I. -Iplugins/udp-broadcast -Ithird-party/include -pthread \
+              tests/udp-broadcast-test.cpp \
+              plugins/udp-broadcast/*.cpp \
+              -o udp-broadcast-test
 
       - name: Run tests
-        run: ./dof-udp-test
+        run: ./udp-broadcast-test
 ```
 
 ## Adding New Tests
@@ -293,6 +293,6 @@ GPLv3+ (same as VPinball)
 
 ## See Also
 
-- [Main UDP Broadcasting Documentation](../plugins/dof/udp/README.md)
+- [Main UDP Broadcasting Plugin Documentation](README.md)
 - [doctest Documentation](https://github.com/doctest/doctest/blob/master/doc/markdown/readme.md)
-- [VPinball Testing Guide](../docs/testing.md)
+- [VPinball Testing Guide](../../docs/testing.md)

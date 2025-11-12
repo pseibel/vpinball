@@ -22,8 +22,8 @@
 #include "DOF/DOF.h"
 #pragma warning(pop)
 
-// UDP Broadcasting
-#include "udp/dof_udp_system.h"
+// UDP Broadcasting Plugin API
+#include "../udp-broadcast/udp_broadcast_api.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -92,10 +92,8 @@ static std::thread pollThread;
 
 static DOF::DOF* pDOF = nullptr;
 
-// UDP Broadcasting - Multi-Stream
-static DOFUDP::EventCollector* pDeviceEventCollector = nullptr; // Device events (Port 7778)
-static DOFUDP::EventCollector* pRGBEventCollector = nullptr;    // RGB events (Port 7779)
-static DOFUDP::EventCollector* pScoreEventCollector = nullptr;  // Segment displays (Port 7781)
+// UDP Broadcasting Plugin API
+static UDPBroadcastAPI* udpBroadcastApi = nullptr;
 
 static void OnPollStates(void* userData);
 
@@ -219,10 +217,8 @@ static void PollThread(const string& tablePath, const string& gameId)
             {
                pDOF->DataReceive('W', i + 1, state ? 1 : 0);
                // UDP Broadcast
-               if (pDeviceEventCollector) {
-                  uint16_t groupId = pinmameInputSrc.inputDefs ? pinmameInputSrc.inputDefs[i].groupId : 0;
-                  uint16_t deviceId = pinmameInputSrc.inputDefs ? pinmameInputSrc.inputDefs[i].deviceId : 0;
-                  pDeviceEventCollector->Wire(i + 1, state ? 1 : 0, groupId, deviceId);
+               if (udpBroadcastApi && udpBroadcastApi->Wire) {
+                  udpBroadcastApi->Wire(i + 1, state ? 1 : 0);
                }
                wireStates[i] = state;
             }
@@ -237,10 +233,8 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('S', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pDeviceEventCollector) {
-                  uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[i].groupId : 0;
-                  uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[i].deviceId : 0;
-                  pDeviceEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+               if (udpBroadcastApi && udpBroadcastApi->Solenoid) {
+                  udpBroadcastApi->Solenoid(i + 1, static_cast<uint16_t>(state * 255));
                }
                solStates[i] = binaryState;
             }
@@ -255,10 +249,8 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('L', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pDeviceEventCollector) {
-                  uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmLampIndex + i].groupId : 0;
-                  uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmLampIndex + i].deviceId : 0;
-                  pDeviceEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+               if (udpBroadcastApi && udpBroadcastApi->Lamp) {
+                  udpBroadcastApi->Lamp(i + 1, static_cast<uint16_t>(state * 255));
                }
                lampStates[i] = binaryState;
             }
@@ -273,10 +265,8 @@ static void PollThread(const string& tablePath, const string& gameId)
                bool binaryState = state > 0.5f;
                pDOF->DataReceive('G', i + 1, binaryState ? 1 : 0);
                // UDP Broadcast
-               if (pDeviceEventCollector) {
-                  uint16_t groupId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmGiIndex + i].groupId : 0;
-                  uint16_t deviceId = pinmameDevSrc.deviceDefs ? pinmameDevSrc.deviceDefs[pmGiIndex + i].deviceId : 0;
-                  pDeviceEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
+               if (udpBroadcastApi && udpBroadcastApi->GI) {
+                  udpBroadcastApi->GI(i + 1, static_cast<uint16_t>(state * 255));
                }
                giStates[i] = binaryState;
             }

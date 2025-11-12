@@ -1,10 +1,21 @@
-# DOF UDP Broadcasting - Multi-Stream Architecture
+# UDP Event Broadcasting Plugin - Multi-Stream Architecture
 
-UDP event broadcasting system for VPinball DOF (Direct Output Framework) plugin.
+Independent VPinball plugin that broadcasts game events via UDP for external controllers, LED systems, displays, and monitoring tools.
 
 ## Overview
 
-This system broadcasts DOF events via **multiple independent UDP streams** to external controllers, LED systems, monitoring tools, or any other UDP-capable application. Each stream type operates independently with its own broadcaster, thread, socket, and configuration.
+This is a standalone VPinball plugin that automatically discovers and broadcasts events from **all game sources** via **multiple independent UDP streams**. It operates independently from the DOF plugin, polling controller events directly and broadcasting them to external applications. Each stream type operates independently with its own broadcaster, thread, socket, and configuration.
+
+### Plugin Architecture
+
+- **Independent Operation**: Runs as a separate plugin, does not require DOF plugin
+- **Universal Source Discovery**: Automatically discovers and broadcasts from:
+  - PinMAME ROM events (Solenoids, Lamps, GI, Wires)
+  - B2S Backglass elements
+  - Segment displays (score displays, alphanumeric)
+  - Custom controller plugins
+  - Any future plugin implementing Controller Plugin API
+- **Public API**: Exposes API for other plugins to submit custom events via message passing
 
 ## Multi-Stream Design
 
@@ -28,18 +39,15 @@ The system supports separate UDP streams for different event categories:
 
 ## Features
 
-- **Lock-free Architecture**: Zero-copy, non-blocking event submission from game thread
+- **Independent Plugin**: Operates as standalone VPinball plugin, polls controller sources directly
+- **Lock-free Architecture**: Zero-copy, non-blocking event submission with SPSC queues
 - **Event Batching**: Packs up to 20 events per UDP packet for efficiency
 - **Per-Stream Rate Limiting**: Configurable packet rate per stream to prevent network flooding
 - **Cross-Platform**: Windows (Winsock2) and POSIX (Linux/macOS) support
 - **Low Overhead**: < 0.01% main thread impact per stream, ~150 KB memory per stream
-- **Comprehensive Events**: Solenoid, Lamp, GI, Wire, RGB, Table lifecycle
+- **Comprehensive Events**: Solenoid, Lamp, GI, Wire, RGB, Segment Displays, Table lifecycle
 - **DOF Spec Compatible**: Preserves original DOF device IDs (groupId, deviceId) in all events
-- **Universal Device Sources**: Automatic discovery and broadcasting from ALL device sources
-  - PinMAME ROM events (Solenoids, Lamps, GI, Wires)
-  - B2S Backglass elements
-  - Custom controller plugins
-  - Any future plugin implementing device sources
+- **Public API**: Other plugins can submit custom events via message passing interface
 
 ## Configuration
 

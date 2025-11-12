@@ -3,7 +3,7 @@
 #pragma once
 
 #include "dof_udp_event.h"
-#include "dof_udp_queue.h"
+#include "lock_free_queue.h"
 
 namespace DOFUDP {
 
