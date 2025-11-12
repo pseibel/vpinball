@@ -868,4 +868,93 @@ TEST_SUITE("Multi-Stream Architecture") {
 
         ShutdownAllStreams();
     }
+
+    TEST_CASE("Table information support") {
+        BroadcasterConfig config;
+        config.enabled = true;
+        config.address = "127.0.0.1";
+        config.port = 7789;
+        config.maxPacketsPerSecond = 60;
+
+        InitializeStream(StreamType::DEVICE, config);
+        EventCollector* collector = GetEventCollector(StreamType::DEVICE);
+        REQUIRE(collector != nullptr);
+
+        SUBCASE("TableInfoPacket creation") {
+            TableInfoPacket packet = TableInfoPacket::Create("Attack from Mars", "afm_113b");
+
+            CHECK(packet.header.magic == MAGIC_TABLE_INFO);
+            CHECK(packet.header.tableNameLength == 16);  // strlen("Attack from Mars")
+            CHECK(packet.header.romNameLength == 8);      // strlen("afm_113b")
+            CHECK(std::string(packet.tableName) == "Attack from Mars");
+            CHECK(std::string(packet.romName) == "afm_113b");
+
+            // Verify packet size calculation
+            size_t expectedSize = sizeof(TableInfoHeader) + 16 + 8;  // header + tableName + romName
+            CHECK(packet.GetPacketSize() == expectedSize);
+        }
+
+        SUBCASE("TableInfo submission and queuing") {
+            // Submit table info
+            collector->TableInfo("Medieval Madness", "mm_109c");
+
+            // Check queue is not empty
+            CHECK(!collector->IsTableInfoQueueEmpty());
+            CHECK(collector->GetTableInfoQueueSize() > 0);
+
+            // Pop the packet
+            TableInfoPacket packet;
+            CHECK(collector->PopTableInfo(packet));
+
+            // Verify packet contents
+            CHECK(std::string(packet.tableName) == "Medieval Madness");
+            CHECK(std::string(packet.romName) == "mm_109c");
+
+            // Queue should now be empty
+            CHECK(collector->IsTableInfoQueueEmpty());
+        }
+
+        SUBCASE("Long table names truncation") {
+            // Create very long table name (over 256 chars)
+            std::string longName(300, 'X');
+            std::string longRom(100, 'Y');
+
+            collector->TableInfo(longName.c_str(), longRom.c_str());
+
+            TableInfoPacket packet;
+            CHECK(collector->PopTableInfo(packet));
+
+            // Verify truncation to max lengths
+            CHECK(packet.header.tableNameLength <= MAX_TABLE_NAME_LENGTH - 1);
+            CHECK(packet.header.romNameLength <= MAX_ROM_NAME_LENGTH - 1);
+        }
+
+        SUBCASE("Empty and null strings") {
+            collector->TableInfo("", "");
+
+            TableInfoPacket packet;
+            CHECK(collector->PopTableInfo(packet));
+            CHECK(packet.header.tableNameLength == 0);
+            CHECK(packet.header.romNameLength == 0);
+
+            // Test null pointers
+            collector->TableInfo(nullptr, nullptr);
+            CHECK(collector->PopTableInfo(packet));
+            CHECK(packet.header.tableNameLength == 0);
+            CHECK(packet.header.romNameLength == 0);
+        }
+
+        SUBCASE("TableInfo statistics") {
+            ResetStreamStatistics(StreamType::DEVICE);
+
+            collector->TableInfo("The Addams Family", "taf_l7");
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            Statistics stats = GetStreamStatistics(StreamType::DEVICE);
+            CHECK(stats.eventsSent >= 1);
+        }
+
+        ShutdownAllStreams();
+    }
 }

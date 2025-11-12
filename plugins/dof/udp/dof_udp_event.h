@@ -399,6 +399,89 @@ struct SegmentDisplayPacket {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+// Table Information Packet
+//
+// Broadcasted when a table is loaded. Contains full table name and ROM name.
+// This replaces the limited TableLoaded event which could only store 9 bytes.
+//
+// Example packet sizes:
+// - "Attack from Mars" + "afm_113b" = 20 (header) + 16 + 8 = 44 bytes
+// - "Medieval Madness" + "mm_109c" = 20 + 16 + 7 = 43 bytes
+//
+// Maximum packet size: 20 + 256 + 64 = 340 bytes
+///////////////////////////////////////////////////////////////////////////////
+
+constexpr uint32_t MAGIC_TABLE_INFO = 0x54424C49; // 'TBLI'
+constexpr uint32_t MAX_TABLE_NAME_LENGTH = 256;
+constexpr uint32_t MAX_ROM_NAME_LENGTH = 64;
+
+#pragma pack(push, 1)
+struct TableInfoHeader {
+    uint32_t magic;              // MAGIC_TABLE_INFO (0x54424C49)
+    uint64_t timestamp_us;       // Microseconds since epoch
+    uint16_t tableNameLength;    // Length of table name string (0-256, excluding null terminator)
+    uint16_t romNameLength;      // Length of ROM name string (0-64, excluding null terminator)
+    uint8_t reserved[4];         // Reserved for future use
+};
+#pragma pack(pop)
+
+static_assert(sizeof(TableInfoHeader) == 20, "TableInfoHeader must be 20 bytes");
+
+// Complete table info packet
+//
+// Strings are stored as variable-length null-terminated data.
+// Actual packet size = sizeof(TableInfoHeader) + tableNameLength + romNameLength
+//
+// Note: Full arrays are allocated but GetPacketSize() returns only the used portion
+struct TableInfoPacket {
+    TableInfoHeader header;
+    char tableName[MAX_TABLE_NAME_LENGTH];  // Variable length, null-terminated
+    char romName[MAX_ROM_NAME_LENGTH];      // Variable length, null-terminated
+
+    TableInfoPacket()
+        : header()
+    {
+        header.magic = MAGIC_TABLE_INFO;
+        header.timestamp_us = Event::GetTimestampMicros();
+        header.tableNameLength = 0;
+        header.romNameLength = 0;
+        std::memset(header.reserved, 0, sizeof(header.reserved));
+        std::memset(tableName, 0, sizeof(tableName));
+        std::memset(romName, 0, sizeof(romName));
+    }
+
+    // Get actual packet size based on string lengths (for UDP transmission)
+    size_t GetPacketSize() const {
+        return sizeof(TableInfoHeader) + header.tableNameLength + header.romNameLength;
+    }
+
+    // Factory method to create table info packet
+    static TableInfoPacket Create(const char* table, const char* rom) {
+        TableInfoPacket packet;
+
+        // Copy table name
+        if (table) {
+            size_t len = std::strlen(table);
+            if (len > MAX_TABLE_NAME_LENGTH - 1) len = MAX_TABLE_NAME_LENGTH - 1;
+            packet.header.tableNameLength = static_cast<uint16_t>(len);
+            std::memcpy(packet.tableName, table, len);
+            packet.tableName[len] = '\0';
+        }
+
+        // Copy ROM name
+        if (rom) {
+            size_t len = std::strlen(rom);
+            if (len > MAX_ROM_NAME_LENGTH - 1) len = MAX_ROM_NAME_LENGTH - 1;
+            packet.header.romNameLength = static_cast<uint16_t>(len);
+            std::memcpy(packet.romName, rom, len);
+            packet.romName[len] = '\0';
+        }
+
+        return packet;
+    }
+};
+
+///////////////////////////////////////////////////////////////////////////////
 // Statistics structure for monitoring
 ///////////////////////////////////////////////////////////////////////////////
 struct Statistics {

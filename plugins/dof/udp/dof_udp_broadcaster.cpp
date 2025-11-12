@@ -299,6 +299,53 @@ bool UDPBroadcaster::SendSegmentDisplayPacket(const SegmentDisplayPacket& packet
     return true;
 }
 
+bool UDPBroadcaster::SendTableInfoPacket(const TableInfoPacket& packet)
+{
+    if (m_socket == INVALID_SOCKET_VALUE)
+        return false;
+
+    // Prepare destination address
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_port = htons(m_config.port);
+
+    // Parse IP address
+#ifdef _WIN32
+    destAddr.sin_addr.s_addr = inet_addr(m_config.address.c_str());
+    if (destAddr.sin_addr.s_addr == INADDR_NONE) {
+        if (inet_pton(AF_INET, m_config.address.c_str(), &destAddr.sin_addr) != 1) {
+            return false;
+        }
+    }
+#else
+    if (inet_pton(AF_INET, m_config.address.c_str(), &destAddr.sin_addr) != 1) {
+        return false;
+    }
+#endif
+
+    // Send packet (only actual data, not full buffer)
+    size_t packetSize = packet.GetPacketSize();
+#ifdef _WIN32
+    int result = sendto((SOCKET)m_socket, (const char*)&packet, (int)packetSize, 0,
+                        (struct sockaddr*)&destAddr, sizeof(destAddr));
+    if (result == SOCKET_ERROR_VALUE) {
+        m_sendErrors.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+#else
+    ssize_t result = sendto(m_socket, &packet, packetSize, 0,
+                           (struct sockaddr*)&destAddr, sizeof(destAddr));
+    if (result < 0) {
+        m_sendErrors.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+#endif
+
+    m_packetsSent.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Broadcaster Thread
 ///////////////////////////////////////////////////////////////////////////////
@@ -337,7 +384,16 @@ void UDPBroadcaster::ProcessEvents()
         return;
     }
 
-    // First, check for segment display packets (higher priority, less frequent)
+    // Check for table info packets first (highest priority, rarest - once per game)
+    TableInfoPacket tableInfoPacket;
+    if (m_collector->PopTableInfo(tableInfoPacket)) {
+        if (SendTableInfoPacket(tableInfoPacket)) {
+            m_packetsThisSecond++;
+        }
+        return; // Process one packet per iteration
+    }
+
+    // Second, check for segment display packets (high priority, less frequent)
     SegmentDisplayPacket segmentPacket;
     if (m_collector->PopSegmentDisplay(segmentPacket)) {
         if (SendSegmentDisplayPacket(segmentPacket)) {

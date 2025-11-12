@@ -81,7 +81,13 @@ public:
                        uint32_t hardware, uint8_t nElements,
                        const uint8_t* elementTypes, const float* segmentData);
 
-    // Submit a table loaded event
+    // Submit table information (loaded)
+    // tableName: Full table name (e.g., "Attack from Mars")
+    // romName: ROM identifier (e.g., "afm_113b")
+    void TableInfo(const char* tableName, const char* romName);
+
+    // Submit a table loaded event (DEPRECATED: Use TableInfo instead)
+    // This method is kept for backward compatibility but only supports truncated names
     void TableLoaded(const char* tableName, const char* gameId);
 
     // Submit a table unloaded event
@@ -113,17 +119,27 @@ public:
     // Returns true if a packet was popped, false if queue is empty
     bool PopSegmentDisplay(SegmentDisplayPacket& packet);
 
+    // Try to pop a table info packet from the table info queue
+    // Returns true if a packet was popped, false if queue is empty
+    bool PopTableInfo(TableInfoPacket& packet);
+
     // Get queue size (approximate)
     size_t GetQueueSize() const;
 
     // Get segment queue size (approximate)
     size_t GetSegmentQueueSize() const;
 
+    // Get table info queue size (approximate)
+    size_t GetTableInfoQueueSize() const;
+
     // Check if queue is empty
     bool IsQueueEmpty() const;
 
     // Check if segment queue is empty
     bool IsSegmentQueueEmpty() const;
+
+    // Check if table info queue is empty
+    bool IsTableInfoQueueEmpty() const;
 
 private:
     // Push an event to the queue
@@ -134,15 +150,20 @@ private:
     // Returns true on success, false if queue is full
     bool PushSegmentDisplay(const SegmentDisplayPacket& packet);
 
+    // Push a table info packet to the table info queue
+    // Returns true on success, false if queue is full
+    bool PushTableInfo(const TableInfoPacket& packet);
+
     ///////////////////////////////////////////////////////////////////////////
-    // Dual Queue Architecture
+    // Multi-Queue Architecture
     //
-    // Regular events (32 bytes):  Queue of 4096 entries = ~128 KB
-    // Segment packets (2144 bytes max): Queue of 256 entries = ~548 KB
+    // Regular events (32 bytes):       Queue of 4096 entries = ~128 KB
+    // Segment packets (2144 bytes max): Queue of 256 entries  = ~548 KB
+    // Table info (340 bytes max):       Queue of 16 entries   = ~5 KB
     //
     // Separate queues allow:
-    // 1. Different sizing strategies (frequent small vs infrequent large)
-    // 2. Priority handling in broadcaster (segment displays checked first)
+    // 1. Different sizing strategies based on frequency and size
+    // 2. Priority handling in broadcaster (rare events checked first)
     // 3. Better memory locality (hot/cold data separation)
     ///////////////////////////////////////////////////////////////////////////
 
@@ -154,11 +175,18 @@ private:
     static constexpr size_t SEGMENT_QUEUE_SIZE = 256;
     LockFreeQueue<SegmentDisplayPacket, SEGMENT_QUEUE_SIZE>* m_segmentQueue;
 
+    // The table info queue (for 340-byte packets)
+    // Very small size since table changes are rare (once per game)
+    static constexpr size_t TABLE_INFO_QUEUE_SIZE = 16;
+    LockFreeQueue<TableInfoPacket, TABLE_INFO_QUEUE_SIZE>* m_tableInfoQueue;
+
     // Statistics (atomic for thread-safe access)
     std::atomic<uint64_t> m_eventsSubmitted;
     std::atomic<uint64_t> m_eventsDropped;
     std::atomic<uint64_t> m_segmentDisplaysSubmitted;
     std::atomic<uint64_t> m_segmentDisplaysDropped;
+    std::atomic<uint64_t> m_tableInfosSubmitted;
+    std::atomic<uint64_t> m_tableInfosDropped;
 };
 
 } // namespace DOFUDP

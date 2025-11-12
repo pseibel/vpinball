@@ -7,10 +7,13 @@ namespace DOFUDP {
 EventCollector::EventCollector(size_t queueSize)
     : m_queue(new LockFreeQueue<Event, DEFAULT_QUEUE_SIZE>())
     , m_segmentQueue(new LockFreeQueue<SegmentDisplayPacket, SEGMENT_QUEUE_SIZE>())
+    , m_tableInfoQueue(new LockFreeQueue<TableInfoPacket, TABLE_INFO_QUEUE_SIZE>())
     , m_eventsSubmitted(0)
     , m_eventsDropped(0)
     , m_segmentDisplaysSubmitted(0)
     , m_segmentDisplaysDropped(0)
+    , m_tableInfosSubmitted(0)
+    , m_tableInfosDropped(0)
 {
     // Note: Queue size is fixed at compile time (DEFAULT_QUEUE_SIZE)
     // The queueSize parameter is here for future extensibility
@@ -21,6 +24,7 @@ EventCollector::~EventCollector()
 {
     delete m_queue;
     delete m_segmentQueue;
+    delete m_tableInfoQueue;
 }
 
 void EventCollector::Solenoid(uint8_t id, uint16_t value)
@@ -158,13 +162,26 @@ void EventCollector::SegmentDisplay(uint64_t displayId, uint64_t groupId, uint32
     }
 }
 
+void EventCollector::TableInfo(const char* tableName, const char* romName)
+{
+    TableInfoPacket packet = TableInfoPacket::Create(tableName, romName);
+
+    if (!PushTableInfo(packet)) {
+        m_tableInfosDropped.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        m_tableInfosSubmitted.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 Statistics EventCollector::GetStatistics() const
 {
     Statistics stats;
     stats.eventsSent = m_eventsSubmitted.load(std::memory_order_relaxed) +
-                       m_segmentDisplaysSubmitted.load(std::memory_order_relaxed);
+                       m_segmentDisplaysSubmitted.load(std::memory_order_relaxed) +
+                       m_tableInfosSubmitted.load(std::memory_order_relaxed);
     stats.eventsDropped = m_eventsDropped.load(std::memory_order_relaxed) +
-                          m_segmentDisplaysDropped.load(std::memory_order_relaxed);
+                          m_segmentDisplaysDropped.load(std::memory_order_relaxed) +
+                          m_tableInfosDropped.load(std::memory_order_relaxed);
     return stats;
 }
 
@@ -174,6 +191,8 @@ void EventCollector::ResetStatistics()
     m_eventsDropped.store(0, std::memory_order_relaxed);
     m_segmentDisplaysSubmitted.store(0, std::memory_order_relaxed);
     m_segmentDisplaysDropped.store(0, std::memory_order_relaxed);
+    m_tableInfosSubmitted.store(0, std::memory_order_relaxed);
+    m_tableInfosDropped.store(0, std::memory_order_relaxed);
 }
 
 bool EventCollector::PopEvent(Event& event)
@@ -219,6 +238,26 @@ bool EventCollector::IsSegmentQueueEmpty() const
 bool EventCollector::PushSegmentDisplay(const SegmentDisplayPacket& packet)
 {
     return m_segmentQueue->Push(packet);
+}
+
+bool EventCollector::PopTableInfo(TableInfoPacket& packet)
+{
+    return m_tableInfoQueue->Pop(packet);
+}
+
+size_t EventCollector::GetTableInfoQueueSize() const
+{
+    return m_tableInfoQueue->GetSize();
+}
+
+bool EventCollector::IsTableInfoQueueEmpty() const
+{
+    return m_tableInfoQueue->IsEmpty();
+}
+
+bool EventCollector::PushTableInfo(const TableInfoPacket& packet)
+{
+    return m_tableInfoQueue->Push(packet);
 }
 
 } // namespace DOFUDP

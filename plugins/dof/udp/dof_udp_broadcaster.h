@@ -108,6 +108,10 @@ private:
     // Returns true on success, false on error
     bool SendSegmentDisplayPacket(const SegmentDisplayPacket& packet);
 
+    // Send a table info packet
+    // Returns true on success, false on error
+    bool SendTableInfoPacket(const TableInfoPacket& packet);
+
     ///////////////////////////////////////////////////////////////////////////
     // Broadcaster Thread
     ///////////////////////////////////////////////////////////////////////////

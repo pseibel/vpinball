@@ -133,6 +133,45 @@ void LIBDOFCALLBACK OnDOFLog(DOF_LogLevel logLevel, const char* format, va_list 
    }
 }
 
+static string GetSettingString(MsgPluginAPI* pMsgApi, const char* section, const char* key, const string& def = string())
+{
+   char buf[256];
+   pMsgApi->GetSetting(section, key, buf, sizeof(buf));
+   return buf[0] ? string(buf) : def;
+}
+
+static int GetSettingInt(MsgPluginAPI* pMsgApi, const char* section, const char* key, int def = 0)
+{
+   const auto s = GetSettingString(pMsgApi, section, key, string());
+   int result;
+   return (s.empty() || (std::from_chars(s.c_str(), s.c_str() + s.length(), result).ec != std::errc{})) ? def : result;
+}
+
+static bool GetSettingBool(MsgPluginAPI* pMsgApi, const char* section, const char* key, bool def = false)
+{
+   const auto s = GetSettingString(pMsgApi, section, key, string());
+   int result;
+   return (s.empty() || (std::from_chars(s.c_str(), s.c_str() + s.length(), result).ec != std::errc{})) ? def : (result != 0);
+}
+
+// Extract table name from full path
+// Example: "/path/to/tables/Attack from Mars.vpx" -> "Attack from Mars"
+static string ExtractTableName(const string& fullPath)
+{
+   if (fullPath.empty()) return string();
+
+   // Find last path separator
+   size_t lastSep = fullPath.find_last_of("/\\");
+   string filename = (lastSep != string::npos) ? fullPath.substr(lastSep + 1) : fullPath;
+
+   // Remove file extension
+   size_t lastDot = filename.find_last_of('.');
+   if (lastDot != string::npos) {
+      filename = filename.substr(0, lastDot);
+   }
+
+   return filename;
+}
 #ifdef _WIN32
 static void SetThreadName(const std::string& name)
 {
@@ -366,9 +405,11 @@ static void OnControllerGameStart(const unsigned int eventId, void* userData, vo
       vpxApi->GetTableInfo(&tableInfo);
       pollThread = std::thread(PollThread, tableInfo.path, msg->gameId);
 
-      // UDP Broadcast: Table loaded event
+      // UDP Broadcast: Table info (name + ROM)
       if (pDeviceEventCollector) {
-         pDeviceEventCollector->TableLoaded(tableInfo.path, msg->gameId);
+         string tableName = ExtractTableName(tableInfo.path);
+         pDeviceEventCollector->TableInfo(tableName.c_str(), msg->gameId);
+         LOGD("DOFPlugin: Broadcasted table info - Table:'%s' ROM:'%s'", tableName.c_str(), msg->gameId);
       }
    }
 }
