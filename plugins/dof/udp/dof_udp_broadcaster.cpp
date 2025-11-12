@@ -252,6 +252,53 @@ bool UDPBroadcaster::SendBatchPacket(const BatchPacket& packet)
     return true;
 }
 
+bool UDPBroadcaster::SendSegmentDisplayPacket(const SegmentDisplayPacket& packet)
+{
+    if (m_socket == INVALID_SOCKET_VALUE)
+        return false;
+
+    // Prepare destination address
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_port = htons(m_config.port);
+
+    // Parse IP address
+#ifdef _WIN32
+    destAddr.sin_addr.s_addr = inet_addr(m_config.address.c_str());
+    if (destAddr.sin_addr.s_addr == INADDR_NONE) {
+        if (inet_pton(AF_INET, m_config.address.c_str(), &destAddr.sin_addr) != 1) {
+            return false;
+        }
+    }
+#else
+    if (inet_pton(AF_INET, m_config.address.c_str(), &destAddr.sin_addr) != 1) {
+        return false;
+    }
+#endif
+
+    // Send packet
+    size_t packetSize = packet.GetPacketSize();
+#ifdef _WIN32
+    int result = sendto((SOCKET)m_socket, (const char*)&packet, (int)packetSize, 0,
+                        (struct sockaddr*)&destAddr, sizeof(destAddr));
+    if (result == SOCKET_ERROR_VALUE) {
+        m_sendErrors.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+#else
+    ssize_t result = sendto(m_socket, &packet, packetSize, 0,
+                           (struct sockaddr*)&destAddr, sizeof(destAddr));
+    if (result < 0) {
+        m_sendErrors.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+#endif
+
+    m_packetsSent.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Broadcaster Thread
 ///////////////////////////////////////////////////////////////////////////////
@@ -290,14 +337,23 @@ void UDPBroadcaster::ProcessEvents()
         return;
     }
 
-    // Try to fill a batch packet from the queue
+    // First, check for segment display packets (higher priority, less frequent)
+    SegmentDisplayPacket segmentPacket;
+    if (m_collector->PopSegmentDisplay(segmentPacket)) {
+        if (SendSegmentDisplayPacket(segmentPacket)) {
+            m_packetsThisSecond++;
+        }
+        return; // Process one packet per iteration
+    }
+
+    // Try to fill a batch packet from the regular event queue
     m_batchPacket.Reset();
 
     Event events[MAX_BATCH_EVENTS];
     size_t eventCount = m_collector->PopBatch(events, MAX_BATCH_EVENTS);
 
     if (eventCount == 0)
-        return; // Queue is empty
+        return; // Both queues are empty
 
     // Add events to batch
     for (size_t i = 0; i < eventCount; i++) {

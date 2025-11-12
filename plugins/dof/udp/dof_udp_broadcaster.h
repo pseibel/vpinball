@@ -104,6 +104,10 @@ private:
     // Returns true on success, false on error
     bool SendBatchPacket(const BatchPacket& packet);
 
+    // Send a segment display packet
+    // Returns true on success, false on error
+    bool SendSegmentDisplayPacket(const SegmentDisplayPacket& packet);
+
     ///////////////////////////////////////////////////////////////////////////
     // Broadcaster Thread
     ///////////////////////////////////////////////////////////////////////////
