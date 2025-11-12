@@ -381,33 +381,33 @@ TEST_SUITE("UDP System Integration") {
         config.maxPacketsPerSecond = 100;
 
         SUBCASE("Successful initialization") {
-            bool result = InitializeDOFUDPBroadcaster(config);
+            bool result = InitializeStream(StreamType::DEVICE, config);
             CHECK(result == true);
-            CHECK(IsDOFUDPBroadcasterRunning() == true);
+            CHECK(IsStreamRunning(StreamType::DEVICE) == true);
 
-            EventCollector* collector = GetDOFEventCollector();
+            EventCollector* collector = GetEventCollector(StreamType::DEVICE);
             CHECK(collector != nullptr);
 
-            ShutdownDOFUDPBroadcaster();
-            CHECK(IsDOFUDPBroadcasterRunning() == false);
+            ShutdownStream(StreamType::DEVICE);
+            CHECK(IsStreamRunning(StreamType::DEVICE) == false);
         }
 
         SUBCASE("Disabled configuration") {
             config.enabled = false;
-            bool result = InitializeDOFUDPBroadcaster(config);
+            bool result = InitializeStream(StreamType::DEVICE, config);
             CHECK(result == false);
-            CHECK(IsDOFUDPBroadcasterRunning() == false);
+            CHECK(IsStreamRunning(StreamType::DEVICE) == false);
         }
 
         SUBCASE("Double initialization") {
-            InitializeDOFUDPBroadcaster(config);
-            CHECK(IsDOFUDPBroadcasterRunning() == true);
+            InitializeStream(StreamType::DEVICE, config);
+            CHECK(IsStreamRunning(StreamType::DEVICE) == true);
 
             // Try to initialize again - should fail
-            bool result = InitializeDOFUDPBroadcaster(config);
+            bool result = InitializeStream(StreamType::DEVICE, config);
             CHECK(result == false);
 
-            ShutdownDOFUDPBroadcaster();
+            ShutdownStream(StreamType::DEVICE);
         }
     }
 
@@ -418,8 +418,8 @@ TEST_SUITE("UDP System Integration") {
         config.port = 7780;
         config.maxPacketsPerSecond = 100;
 
-        InitializeDOFUDPBroadcaster(config);
-        EventCollector* collector = GetDOFEventCollector();
+        InitializeStream(StreamType::DEVICE, config);
+        EventCollector* collector = GetEventCollector(StreamType::DEVICE);
         REQUIRE(collector != nullptr);
 
         // Submit various events
@@ -433,10 +433,10 @@ TEST_SUITE("UDP System Integration") {
         // Give broadcaster thread time to process
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        Statistics stats = GetDOFUDPStatistics();
+        Statistics stats = GetStreamStatistics(StreamType::DEVICE);
         CHECK(stats.eventsSent >= 6);
 
-        ShutdownDOFUDPBroadcaster();
+        ShutdownStream(StreamType::DEVICE);
     }
 
     TEST_CASE("Statistics") {
@@ -445,8 +445,8 @@ TEST_SUITE("UDP System Integration") {
         config.address = "127.0.0.1";
         config.port = 7781;
 
-        InitializeDOFUDPBroadcaster(config);
-        EventCollector* collector = GetDOFEventCollector();
+        InitializeStream(StreamType::DEVICE, config);
+        EventCollector* collector = GetEventCollector(StreamType::DEVICE);
 
         // Submit many events
         for (int i = 0; i < 100; i++) {
@@ -455,16 +455,16 @@ TEST_SUITE("UDP System Integration") {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-        Statistics stats = GetDOFUDPStatistics();
+        Statistics stats = GetStreamStatistics(StreamType::DEVICE);
         CHECK(stats.eventsSent > 0);
         CHECK(stats.packetsSent > 0);
 
-        ResetDOFUDPStatistics();
-        stats = GetDOFUDPStatistics();
+        ResetStreamStatistics(StreamType::DEVICE);
+        stats = GetStreamStatistics(StreamType::DEVICE);
         CHECK(stats.eventsSent == 0);
         CHECK(stats.packetsSent == 0);
 
-        ShutdownDOFUDPBroadcaster();
+        ShutdownStream(StreamType::DEVICE);
     }
 }
 
@@ -649,30 +649,6 @@ TEST_SUITE("Multi-Stream Architecture") {
         CHECK(rgbStats.eventsSent >= 5);
 
         ShutdownAllStreams();
-    }
-
-    TEST_CASE("Legacy API compatibility with multi-stream") {
-        BroadcasterConfig config;
-        config.enabled = true;
-        config.address = "127.0.0.1";
-        config.port = 7788;
-
-        // Use legacy API
-        bool result = InitializeDOFUDPBroadcaster(config);
-        CHECK(result == true);
-
-        // Legacy API should work with DEVICE stream
-        CHECK(IsDOFUDPBroadcasterRunning() == true);
-        CHECK(IsStreamRunning(StreamType::DEVICE) == true);
-
-        EventCollector* legacyCollector = GetDOFEventCollector();
-        EventCollector* deviceCollector = GetEventCollector(StreamType::DEVICE);
-
-        CHECK(legacyCollector != nullptr);
-        CHECK(legacyCollector == deviceCollector); // Should be same collector
-
-        ShutdownDOFUDPBroadcaster();
-        CHECK(IsStreamRunning(StreamType::DEVICE) == false);
     }
 
     TEST_CASE("Double initialization of same stream") {

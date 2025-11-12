@@ -85,26 +85,4 @@ Statistics GetStreamStatistics(StreamType type);
 // Reset statistics counters for a specific stream
 void ResetStreamStatistics(StreamType type);
 
-///////////////////////////////////////////////////////////////////////////////
-// Legacy API (for backward compatibility - delegates to DEVICE stream)
-///////////////////////////////////////////////////////////////////////////////
-
-// Initialize the UDP broadcasting system (uses DEVICE stream)
-bool InitializeDOFUDPBroadcaster(const BroadcasterConfig& config);
-
-// Shutdown the UDP broadcasting system (shuts down DEVICE stream)
-void ShutdownDOFUDPBroadcaster();
-
-// Get the event collector (returns DEVICE stream collector)
-EventCollector* GetDOFEventCollector();
-
-// Check if the system is initialized and running (checks DEVICE stream)
-bool IsDOFUDPBroadcasterRunning();
-
-// Get current statistics (returns DEVICE stream statistics)
-Statistics GetDOFUDPStatistics();
-
-// Reset statistics counters (resets DEVICE stream statistics)
-void ResetDOFUDPStatistics();
-
 } // namespace DOFUDP

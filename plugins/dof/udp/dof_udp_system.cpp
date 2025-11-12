@@ -186,38 +186,4 @@ void ResetStreamStatistics(StreamType type)
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Legacy API Implementation (delegates to DEVICE stream)
-///////////////////////////////////////////////////////////////////////////////
-
-bool InitializeDOFUDPBroadcaster(const BroadcasterConfig& config)
-{
-    return InitializeStream(StreamType::DEVICE, config);
-}
-
-void ShutdownDOFUDPBroadcaster()
-{
-    ShutdownStream(StreamType::DEVICE);
-}
-
-EventCollector* GetDOFEventCollector()
-{
-    return GetEventCollector(StreamType::DEVICE);
-}
-
-bool IsDOFUDPBroadcasterRunning()
-{
-    return IsStreamRunning(StreamType::DEVICE);
-}
-
-Statistics GetDOFUDPStatistics()
-{
-    return GetStreamStatistics(StreamType::DEVICE);
-}
-
-void ResetDOFUDPStatistics()
-{
-    ResetStreamStatistics(StreamType::DEVICE);
-}
-
 } // namespace DOFUDP
