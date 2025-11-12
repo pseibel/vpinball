@@ -15,7 +15,7 @@ The system supports separate UDP streams for different event categories:
 | **DEVICE** | 7778 | Solenoid, Lamp, GI, Wire | ✅ Implemented |
 | **RGB** | 7779 | RGB LED events | ✅ Implemented |
 | **DMD** | 7780 | Display matrix frames | 🔮 Future |
-| **SCORE** | 7781 | Segment/score displays | 🔮 Future |
+| **SCORE** | 7781 | Segment/score displays | ✅ Implemented |
 | **AUDIO** | 7782 | Audio streams | 🔮 Future |
 
 ### Why Multiple Streams?
@@ -67,6 +67,17 @@ UDPRGBStreamMaxPacketsPerSecond=120
 UDPRGBStreamQueueSize=4096
 ```
 
+### Score Stream Configuration (Segment Displays)
+
+```ini
+[DOF]
+UDPScoreStreamEnabled=1
+UDPScoreStreamAddress=255.255.255.255
+UDPScoreStreamPort=7781
+UDPScoreStreamMaxPacketsPerSecond=60
+UDPScoreStreamQueueSize=256
+```
+
 ### Configuration Options
 
 #### Device Stream Settings
@@ -88,6 +99,16 @@ UDPRGBStreamQueueSize=4096
 | `UDPRGBStreamPort` | int | `7779` | Target UDP port |
 | `UDPRGBStreamMaxPacketsPerSecond` | int | `120` | Rate limit (0 = unlimited) |
 | `UDPRGBStreamQueueSize` | int | `4096` | Event queue size (must be power of 2) |
+
+#### Score Stream Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `UDPScoreStreamEnabled` | bool | `true` | Enable/disable Score stream |
+| `UDPScoreStreamAddress` | string | `255.255.255.255` | Target IP address (supports broadcast) |
+| `UDPScoreStreamPort` | int | `7781` | Target UDP port |
+| `UDPScoreStreamMaxPacketsPerSecond` | int | `60` | Rate limit (0 = unlimited) |
+| `UDPScoreStreamQueueSize` | int | `256` | Event queue size (must be power of 2) |
 
 ## Protocol
 
@@ -131,8 +152,52 @@ struct BatchHeader {
 | GI | 3 | General Illumination | id, value (0-255) |
 | RGB | 4 | RGB LED | id, r, g, b |
 | Wire | 5 | Wire/Switch state | id, value (0-1) |
-| TableLoaded | 128 | Table loaded | reserved (table name) |
-| TableUnloaded | 129 | Table unloaded | - |
+
+### Additional Packet Types
+
+#### TableInfoPacket (Variable Size)
+
+Broadcasts table lifecycle and metadata information:
+
+```c
+struct TableInfoHeader {
+    uint32_t magic;              // 0x54424C49 ('TBLI')
+    uint64_t timestamp_us;       // Microseconds since epoch
+    uint16_t tableNameLength;    // Length of table name string (0-256)
+    uint16_t romNameLength;      // Length of ROM name string (0-64)
+    uint8_t reserved[4];
+};
+// Followed by:
+// - char tableName[tableNameLength]     // Table name (e.g., "Attack from Mars")
+// - char romName[romNameLength]         // ROM/game ID (e.g., "afm_113b")
+```
+
+**Usage:**
+- **Table Load**: `TableInfo("Attack from Mars", "afm_113b")`
+- **Table Unload**: `TableInfo("", "")` - empty strings signal session end
+
+#### SegmentDisplayPacket (Score Stream)
+
+Broadcasts 7-segment and alphanumeric display data:
+
+```c
+struct SegmentDisplayPacket {
+    uint32_t magic;              // 0x53454744 ('SEGD')
+    uint64_t timestamp_us;       // Microseconds since epoch
+    uint8_t displayId;           // Display identifier (0-255)
+    uint8_t displayType;         // 0=7seg, 1=9seg, 2=14seg, 3=16seg, 4=alphanum
+    uint8_t digitCount;          // Number of digits (1-32)
+    uint8_t reserved;
+    uint16_t segments[32];       // Segment data per digit (bit-packed)
+};
+```
+
+**Display Types:**
+- `0` = 7-segment numeric
+- `1` = 9-segment numeric with comma
+- `2` = 14-segment alphanumeric
+- `3` = 16-segment alphanumeric
+- `4` = Full alphanumeric (16-bit per character)
 
 ## Network Details
 
@@ -145,44 +210,63 @@ struct BatchHeader {
 
 ## Architecture
 
+### Multi-Queue Design
+
+The system uses separate lock-free queues for different event types to optimize performance:
+
 ```
-┌─────────────────────────────────┐
-│      Game Thread (60 FPS)       │
-│                                 │
-│  DOF Plugin PollThread()        │
-│  ├─ Solenoid State Changed      │
-│  ├─ Lamp State Changed          │
-│  └─ GI State Changed            │
-│         │                       │
-│         ▼                       │
-│  EventCollector::Solenoid()     │◄── Lock-free, non-blocking
-│         │                       │
-│         ▼                       │
-│  LockFreeQueue::Push()          │◄── Atomic operations only
-└─────────┬───────────────────────┘
+┌─────────────────────────────────────────────────┐
+│           Game Thread (60 FPS)                  │
+│                                                 │
+│  DOF Plugin / PinMAME Events                    │
+│  ├─ Solenoid/Lamp/GI State Changed              │
+│  ├─ Segment Display Update                      │
+│  └─ Table Load/Unload                           │
+│         │                                       │
+│         ▼                                       │
+│  EventCollector API (lock-free)                 │
+│  ├─ Solenoid() / Lamp() / GI()                  │
+│  ├─ SegmentDisplay()                            │
+│  └─ TableInfo()                                 │
+└─────────┬───────────────────────────────────────┘
           │
-          │ Lock-free Queue (4096 events)
+          │ Three Independent Lock-Free Queues
           │
-┌─────────▼───────────────────────┐
-│    Broadcaster Thread           │
-│                                 │
-│  ├─ Pop events from queue       │
-│  ├─ Batch events (up to 20)     │
-│  ├─ Apply rate limiting         │
-│  └─ sendto() UDP broadcast      │
-└─────────────────────────────────┘
+          ├─► Regular Events Queue (1024 entries, FIFO)
+          │   └─ Solenoid, Lamp, GI, Wire, RGB events
+          │
+          ├─► Segment Display Queue (256 entries, overwrite)
+          │   └─ 7-segment, alphanumeric display data
+          │
+          └─► Table Info Queue (16 entries, FIFO)
+              └─ Table load/unload events
+          │
+┌─────────▼───────────────────────────────────────┐
+│       Broadcaster Thread                        │
+│                                                 │
+│  Priority-based event processing:               │
+│  1. Check TableInfo queue first (rare)          │
+│  2. Check SegmentDisplay queue (frequent)       │
+│  3. Check Regular Events queue (high volume)    │
+│                                                 │
+│  ├─ Pop events from queues                      │
+│  ├─ Batch events (up to 20 for regular)         │
+│  ├─ Apply rate limiting                         │
+│  └─ sendto() UDP broadcast                      │
+└─────────────────────────────────────────────────┘
           │
           ▼
-    UDP Network (Port 7778)
+  UDP Network (Ports 7778, 7781, etc.)
           │
           ▼
-┌─────────────────────────────────┐
-│  External Clients               │
-│  ├─ WLED controllers            │
-│  ├─ LED matrices                │
-│  ├─ Monitoring tools            │
-│  └─ Custom applications         │
-└─────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│  External Clients                               │
+│  ├─ WLED controllers                            │
+│  ├─ LED matrices                                │
+│  ├─ Score displays                              │
+│  ├─ Monitoring tools                            │
+│  └─ Custom applications                         │
+└─────────────────────────────────────────────────┘
 ```
 
 ## Performance Characteristics

@@ -4,15 +4,15 @@ Comprehensive unit tests for the UDP event broadcasting system.
 
 ## Test Coverage
 
-### 1. Event Protocol Tests (6 test cases)
+### 1. Event Protocol Tests
 - ✅ Event structure size validation (32 bytes)
 - ✅ BatchHeader structure size (16 bytes)
 - ✅ Magic number verification
-- ✅ Event factory methods (Solenoid, Lamp, GI, RGB, Wire, Table)
+- ✅ Event factory methods (Solenoid, Lamp, GI, RGB, Wire)
 - ✅ Batch packet creation and limits
 - ✅ Batch packet reset functionality
 
-### 2. Lock-Free Queue Tests (6 test cases)
+### 2. Lock-Free Queue Tests
 - ✅ Queue capacity calculation
 - ✅ Basic push and pop operations
 - ✅ Queue full condition handling
@@ -20,21 +20,32 @@ Comprehensive unit tests for the UDP event broadcasting system.
 - ✅ Batch push/pop operations
 - ✅ Queue with Event structures
 
-### 3. Event Collector Tests (4 test cases)
+### 3. Event Collector Tests
 - ✅ Collector creation and destruction
 - ✅ Event submission (all types)
 - ✅ Statistics tracking
 - ✅ Queue overflow handling
 
-### 4. UDP System Integration Tests (3 test cases)
+### 4. Segment Display Tests
+- ✅ SegmentDisplayPacket creation and validation
+- ✅ Display type support (7-seg, 9-seg, 14-seg, 16-seg, alphanumeric)
+- ✅ Segment data encoding
+- ✅ Queue operations and statistics
+
+### 5. Table Information Tests
+- ✅ TableInfoPacket creation with variable-size strings
+- ✅ String truncation for long table/ROM names
+- ✅ Empty string handling (table unload signal)
+- ✅ Statistics tracking
+
+### 6. UDP System Integration Tests
 - ✅ System initialization and shutdown
 - ✅ Event submission and broadcasting
+- ✅ Multi-queue priority processing
 - ✅ Statistics collection
 
-### 5. Thread Safety Tests (1 test case)
+### 7. Thread Safety Tests
 - ✅ Concurrent queue access (producer/consumer)
-
-## Total: 19 Test Cases, 151 Assertions
 
 ## Building and Running Tests
 
@@ -73,29 +84,35 @@ g++ -std=c++20 \
 ./dof-udp-test
 ```
 
-Expected output:
+Expected output on success:
 ```
-[doctest] test cases:  19 |  19 passed | 0 failed | 0 skipped
-[doctest] assertions: 151 | 151 passed | 0 failed |
+[doctest] test cases:  N |  N passed | 0 failed | 0 skipped
+[doctest] assertions: M | M passed | 0 failed |
 [doctest] Status: SUCCESS!
 ```
 
 ### Run Specific Test Suites
 
 ```bash
-# Event protocol tests only
+# Event protocol tests
 ./dof-udp-test --test-suite="DOF UDP Event Protocol"
 
-# Lock-free queue tests only
+# Lock-free queue tests
 ./dof-udp-test --test-suite="Lock-Free Queue"
 
-# Event collector tests only
+# Event collector tests
 ./dof-udp-test --test-suite="Event Collector"
 
-# UDP system tests only
+# Segment display tests
+./dof-udp-test --test-suite="Segment Display Support"
+
+# Table information tests
+./dof-udp-test --test-suite="Table information support"
+
+# UDP system integration tests
 ./dof-udp-test --test-suite="UDP System Integration"
 
-# Thread safety tests only
+# Thread safety tests
 ./dof-udp-test --test-suite="Thread Safety"
 ```
 
