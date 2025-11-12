@@ -75,18 +75,6 @@ TEST_SUITE("DOF UDP Event Protocol") {
             CHECK(e.id == 8);
             CHECK(e.value == 1);
         }
-
-        SUBCASE("Table loaded event") {
-            Event e = Event::TableLoaded("TestTable", "test_rom");
-            CHECK(e.type == EventType::TableLoaded);
-            // Table name should be in reserved area
-            CHECK(e.reserved[0] == 'T');
-        }
-
-        SUBCASE("Table unloaded event") {
-            Event e = Event::TableUnloaded();
-            CHECK(e.type == EventType::TableUnloaded);
-        }
     }
 
     TEST_CASE("BatchPacket") {
@@ -428,7 +416,7 @@ TEST_SUITE("UDP System Integration") {
         collector->GI(3, 200);
         collector->RGB(4, 255, 0, 0);
         collector->Wire(5, 1);
-        collector->TableLoaded("TestTable", "test_rom");
+        collector->TableInfo("TestTable", "test_rom");
 
         // Give broadcaster thread time to process
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

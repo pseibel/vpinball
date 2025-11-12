@@ -48,9 +48,8 @@ enum class EventType : uint8_t {
     // Segment Display events (Score stream)
     SegmentDisplay = 20,  // Segment display update (uses SegmentDisplayPacket)
 
-    // Table lifecycle events
-    TableLoaded = 128,    // Table loaded (tableName in payload)
-    TableUnloaded = 129,  // Table unloaded
+    // Table information (uses TableInfoPacket, not Event structure)
+    // TableInfo packets are sent separately, not as Event types
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -204,27 +203,6 @@ struct Event {
         e.value = value;
         e.groupId = groupId;
         e.deviceId = deviceId;
-        return e;
-    }
-
-    static Event TableLoaded(const char* tableName, const char* gameId) {
-        Event e;
-        e.timestamp_us = GetTimestampMicros();
-        e.type = EventType::TableLoaded;
-        // Table info encoded in reserved area (first 13 bytes)
-        // Format: "tableName" (limited to 13 chars for now)
-        if (tableName) {
-            size_t len = strlen(tableName);
-            if (len > 13) len = 13;
-            memcpy(e.reserved, tableName, len);
-        }
-        return e;
-    }
-
-    static Event TableUnloaded() {
-        Event e;
-        e.timestamp_us = GetTimestampMicros();
-        e.type = EventType::TableUnloaded;
         return e;
     }
 };
@@ -402,7 +380,6 @@ struct SegmentDisplayPacket {
 // Table Information Packet
 //
 // Broadcasted when a table is loaded. Contains full table name and ROM name.
-// This replaces the limited TableLoaded event which could only store 9 bytes.
 //
 // Example packet sizes:
 // - "Attack from Mars" + "afm_113b" = 20 (header) + 16 + 8 = 44 bytes

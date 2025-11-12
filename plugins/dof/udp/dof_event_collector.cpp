@@ -127,26 +127,6 @@ void EventCollector::Wire(uint8_t id, uint16_t value, uint16_t groupId, uint16_t
     }
 }
 
-void EventCollector::TableLoaded(const char* tableName, const char* gameId)
-{
-    Event event = Event::TableLoaded(tableName, gameId);
-    if (!PushEvent(event)) {
-        m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
-    } else {
-        m_eventsSubmitted.fetch_add(1, std::memory_order_relaxed);
-    }
-}
-
-void EventCollector::TableUnloaded()
-{
-    Event event = Event::TableUnloaded();
-    if (!PushEvent(event)) {
-        m_eventsDropped.fetch_add(1, std::memory_order_relaxed);
-    } else {
-        m_eventsSubmitted.fetch_add(1, std::memory_order_relaxed);
-    }
-}
-
 void EventCollector::SegmentDisplay(uint64_t displayId, uint64_t groupId, uint32_t frameId,
                                     uint32_t hardware, uint8_t nElements,
                                     const uint8_t* elementTypes, const float* segmentData)

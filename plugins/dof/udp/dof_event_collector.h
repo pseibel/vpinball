@@ -86,13 +86,6 @@ public:
     // romName: ROM identifier (e.g., "afm_113b")
     void TableInfo(const char* tableName, const char* romName);
 
-    // Submit a table loaded event (DEPRECATED: Use TableInfo instead)
-    // This method is kept for backward compatibility but only supports truncated names
-    void TableLoaded(const char* tableName, const char* gameId);
-
-    // Submit a table unloaded event
-    void TableUnloaded();
-
     ///////////////////////////////////////////////////////////////////////////
     // Statistics API
     ///////////////////////////////////////////////////////////////////////////
