@@ -712,4 +712,160 @@ TEST_SUITE("Multi-Stream Architecture") {
 
         ShutdownAllStreams();
     }
+
+    TEST_CASE("Segment display support") {
+        BroadcasterConfig config;
+        config.enabled = true;
+        config.address = "127.0.0.1";
+        config.port = 7788;
+        config.maxPacketsPerSecond = 60;
+
+        InitializeStream(StreamType::DEVICE, config);
+        EventCollector* collector = GetEventCollector(StreamType::DEVICE);
+        REQUIRE(collector != nullptr);
+
+        SUBCASE("SegmentDisplay packet creation") {
+            uint8_t elementTypes[5] = {
+                (uint8_t)SegElementType::SEG_7,
+                (uint8_t)SegElementType::SEG_7,
+                (uint8_t)SegElementType::SEG_7,
+                (uint8_t)SegElementType::SEG_7,
+                (uint8_t)SegElementType::SEG_7
+            };
+            float segmentData[5 * 16]; // 5 elements * 16 segments each
+
+            // Fill with test data
+            for (int i = 0; i < 5 * 16; i++) {
+                segmentData[i] = (float)(i % 2); // Alternating 0/1
+            }
+
+            SegmentDisplayPacket packet = SegmentDisplayPacket::Create(
+                0x1234567890ABCDEF,  // displayId
+                0xFEDCBA0987654321,  // groupId
+                42,                   // frameId
+                0x00030001,          // hardware (GTS1_4DIGIT)
+                5,                    // nElements
+                elementTypes,
+                segmentData
+            );
+
+            CHECK(packet.header.magic == MAGIC_SEGMENT_DISPLAY);
+            CHECK(packet.header.displayId == 0x1234567890ABCDEF);
+            CHECK(packet.header.groupId == 0xFEDCBA0987654321);
+            CHECK(packet.header.frameId == 42);
+            CHECK(packet.header.hardware == 0x00030001);
+            CHECK(packet.header.nElements == 5);
+
+            // Verify element types
+            for (int i = 0; i < 5; i++) {
+                CHECK(packet.header.elementTypes[i] == (uint8_t)SegElementType::SEG_7);
+            }
+
+            // Verify segment data
+            for (int i = 0; i < 5 * 16; i++) {
+                CHECK(packet.segmentData[i] == (float)(i % 2));
+            }
+
+            // Check packet size calculation
+            size_t expectedSize = sizeof(SegmentDisplayHeader) + (5 * 16 * sizeof(float));
+            CHECK(packet.GetPacketSize() == expectedSize);
+        }
+
+        SUBCASE("SegmentDisplay submission and queuing") {
+            uint8_t elementTypes[2] = {
+                (uint8_t)SegElementType::SEG_14,
+                (uint8_t)SegElementType::SEG_14
+            };
+            float segmentData[2 * 16];
+
+            // Fill with test pattern
+            for (int i = 0; i < 2 * 16; i++) {
+                segmentData[i] = 0.5f;
+            }
+
+            // Submit segment display
+            collector->SegmentDisplay(
+                0x1111111111111111,  // displayId
+                0x2222222222222222,  // groupId
+                100,                  // frameId
+                0x00020000,          // hardware (RED_LED)
+                2,                    // nElements
+                elementTypes,
+                segmentData
+            );
+
+            // Check queue is not empty
+            CHECK(!collector->IsSegmentQueueEmpty());
+            CHECK(collector->GetSegmentQueueSize() > 0);
+
+            // Pop the packet
+            SegmentDisplayPacket packet;
+            CHECK(collector->PopSegmentDisplay(packet));
+
+            // Verify packet contents
+            CHECK(packet.header.displayId == 0x1111111111111111);
+            CHECK(packet.header.groupId == 0x2222222222222222);
+            CHECK(packet.header.frameId == 100);
+            CHECK(packet.header.nElements == 2);
+
+            // Queue should now be empty
+            CHECK(collector->IsSegmentQueueEmpty());
+        }
+
+        SUBCASE("Mixed event types - regular events and segment displays") {
+            // Submit regular events
+            for (int i = 0; i < 10; i++) {
+                collector->Solenoid(i, 255, 0x0300, i);
+            }
+
+            // Submit segment display
+            uint8_t elementTypes[1] = {(uint8_t)SegElementType::SEG_7D};
+            float segmentData[16];
+            for (int i = 0; i < 16; i++) {
+                segmentData[i] = 1.0f;
+            }
+
+            collector->SegmentDisplay(
+                0xAAAAAAAAAAAAAAAA,
+                0xBBBBBBBBBBBBBBBB,
+                999,
+                0x00040000,
+                1,
+                elementTypes,
+                segmentData
+            );
+
+            // Both queues should have data
+            CHECK(!collector->IsQueueEmpty());
+            CHECK(!collector->IsSegmentQueueEmpty());
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            // Both types should be sent (statistics combined)
+            Statistics stats = GetStreamStatistics(StreamType::DEVICE);
+            CHECK(stats.eventsSent >= 11); // At least 10 regular + 1 segment
+        }
+
+        SUBCASE("Segment display statistics") {
+            ResetStreamStatistics(StreamType::DEVICE);
+
+            uint8_t elementTypes[1] = {(uint8_t)SegElementType::SEG_9};
+            float segmentData[16];
+            std::memset(segmentData, 0, sizeof(segmentData));
+
+            // Submit multiple segment displays
+            for (int i = 0; i < 5; i++) {
+                collector->SegmentDisplay(
+                    i, i, i, 0, 1, elementTypes, segmentData
+                );
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            Statistics stats = GetStreamStatistics(StreamType::DEVICE);
+            CHECK(stats.eventsSent >= 5);
+        }
+
+        ShutdownAllStreams();
+    }
 }
