@@ -7,6 +7,8 @@
 #include <charconv>
 #include <thread>
 #include <mutex>
+#include <vector>
+#include <cmath>
 #if defined(__APPLE__) || defined(__linux__) || defined(__ANDROID__)
 #include <pthread.h>
 #endif
@@ -54,6 +56,8 @@ static unsigned int onInputSrcChangedId;
 
 static std::mutex sourceMutex;
 static bool isRunning = false;
+
+// PinMAME Device Source
 static DevSrcId pinmameDevSrc = {};
 static InputSrcId pinmameInputSrc = {};
 static unsigned int nPmSolenoids = 0;
@@ -61,6 +65,14 @@ static int pmGiIndex = -1;
 static unsigned int nPmGIs = 0;
 static int pmLampIndex = -1;
 static unsigned int nPmLamps = 0;
+
+// Additional Device Sources (B2S, custom controllers, etc.)
+struct AdditionalDevSrc {
+   DevSrcId devSrc;
+   std::string endpointName;
+   unsigned int nDevices;
+};
+static std::vector<AdditionalDevSrc> additionalDevSources;
 
 static std::thread pollThread;
 
@@ -203,9 +215,58 @@ static void PollThread(const string& tablePath, const string& gameId)
             }
          }
 
+         // Poll additional device sources (B2S, custom controllers, etc.)
+         static std::vector<std::vector<float>> additionalDeviceStates;
+         additionalDeviceStates.resize(additionalDevSources.size());
+
+         for (size_t srcIdx = 0; srcIdx < additionalDevSources.size(); srcIdx++)
+         {
+            const auto& src = additionalDevSources[srcIdx];
+            auto& states = additionalDeviceStates[srcIdx];
+
+            isInitialState |= states.size() != src.nDevices;
+            states.resize(src.nDevices);
+
+            for (unsigned int i = 0; i < src.nDevices; i++)
+            {
+               float state = src.devSrc.GetFloatState(i);
+
+               // Check for significant state change or initial state
+               if (isInitialState || fabsf(states[i] - state) > 0.05f)
+               {
+                  // Broadcast event based on device groupId
+                  uint16_t groupId = src.devSrc.deviceDefs[i].groupId;
+
+                  if (pEventCollector)
+                  {
+                     // Map groupId to event types
+                     // 0x0100 = GI, 0x0200 = Lamps, 0x0300 = Mechs, etc.
+                     switch (groupId)
+                     {
+                        case 0x0100: // GI
+                           pEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255));
+                           break;
+                        case 0x0200: // Lamps
+                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255));
+                           break;
+                        case 0x0300: // Mechs/Solenoids
+                           pEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255));
+                           break;
+                        default:
+                           // Generic event for unknown types
+                           pEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255));
+                           break;
+                     }
+                  }
+
+                  states[i] = state;
+               }
+            }
+         }
+
          isInitialState = false;
       }
-      
+
       // Fixed update at 60 FPS
       std::this_thread::sleep_for(std::chrono::microseconds(16666));
    }
@@ -257,6 +318,7 @@ static void OnControllerGameEnd(const unsigned int eventId, void* userData, void
 
 static void ClearDevices()
 {
+   // Clear PinMAME devices
    delete[] pinmameDevSrc.deviceDefs;
    nPmSolenoids = 0;
    pmGiIndex = -1;
@@ -264,6 +326,12 @@ static void ClearDevices()
    pmLampIndex = -1;
    nPmLamps = 0;
    memset(&pinmameDevSrc, 0, sizeof(pinmameDevSrc));
+
+   // Clear additional device sources
+   for (auto& src : additionalDevSources) {
+      delete[] src.devSrc.deviceDefs;
+   }
+   additionalDevSources.clear();
 }
 
 static void OnDevSrcChanged(const unsigned int eventId, void* userData, void* msgData)
@@ -286,15 +354,37 @@ static void OnDevSrcChanged(const unsigned int eventId, void* userData, void* ms
    {
       memset(&info, 0, sizeof(info));
       msgApi->GetEndpointInfo(getSrcMsg.entries[i].id.endpointId, &info);
-      if (info.id != nullptr && info.id == "PinMAME"s)
+
+      std::string endpointName = (info.id != nullptr) ? std::string(info.id) : "";
+
+      if (endpointName == "PinMAME")
       {
+         // Handle PinMAME (primary source)
          pinmameDevSrc = getSrcMsg.entries[i];
          if (pinmameDevSrc.deviceDefs)
          {
             pinmameDevSrc.deviceDefs = new DeviceDef[pinmameDevSrc.nDevices];
             memcpy(pinmameDevSrc.deviceDefs, getSrcMsg.entries[i].deviceDefs, getSrcMsg.entries[i].nDevices * sizeof(DeviceDef));
          }
-         break;
+      }
+      else if (!endpointName.empty())
+      {
+         // Handle additional device sources (B2S, custom controllers, etc.)
+         AdditionalDevSrc addSrc;
+         addSrc.endpointName = endpointName;
+         addSrc.devSrc = getSrcMsg.entries[i];
+         addSrc.nDevices = getSrcMsg.entries[i].nDevices;
+
+         if (addSrc.devSrc.deviceDefs)
+         {
+            addSrc.devSrc.deviceDefs = new DeviceDef[addSrc.nDevices];
+            memcpy(addSrc.devSrc.deviceDefs, getSrcMsg.entries[i].deviceDefs,
+                   getSrcMsg.entries[i].nDevices * sizeof(DeviceDef));
+         }
+
+         additionalDevSources.push_back(addSrc);
+         LOGI("DOFPlugin: Found additional device source: %s (%d devices)",
+              endpointName.c_str(), addSrc.nDevices);
       }
    }
    delete[] getSrcMsg.entries;
