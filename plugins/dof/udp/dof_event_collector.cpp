@@ -115,7 +115,7 @@ size_t EventCollector::PopBatch(Event* events, size_t maxEvents)
 
 size_t EventCollector::GetQueueSize() const
 {
-    return m_queue->Size();
+    return m_queue->GetSize();
 }
 
 bool EventCollector::IsQueueEmpty() const

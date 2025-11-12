@@ -108,7 +108,7 @@ public:
     ///////////////////////////////////////////////////////////////////////////
 
     // Get approximate number of items in queue
-    size_t Size() const {
+    size_t GetSize() const {
         const size_t write = m_writeIndex.load(std::memory_order_acquire);
         const size_t read = m_readIndex.load(std::memory_order_acquire);
         return (write - read) & (Size - 1);
