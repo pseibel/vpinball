@@ -419,9 +419,10 @@ static void OnControllerGameEnd(const unsigned int eventId, void* userData, void
    if (pDOF) {
       LOGI("DOFPlugin: OnControllerGameEnd");
 
-      // UDP Broadcast: Table unloaded event
+      // UDP Broadcast: Table unloaded (empty TableInfo signals end of session)
       if (pDeviceEventCollector) {
-         pDeviceEventCollector->TableUnloaded();
+         pDeviceEventCollector->TableInfo("", "");
+         LOGD("DOFPlugin: Broadcasted table unload (empty TableInfo)");
       }
 
       isRunning = false;
