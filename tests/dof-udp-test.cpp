@@ -507,3 +507,233 @@ TEST_SUITE("Thread Safety") {
         CHECK(queue.IsEmpty() == true);
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Multi-Stream Architecture Tests
+///////////////////////////////////////////////////////////////////////////////
+
+TEST_SUITE("Multi-Stream Architecture") {
+    TEST_CASE("Initialize multiple streams independently") {
+        BroadcasterConfig deviceConfig;
+        deviceConfig.enabled = true;
+        deviceConfig.address = "127.0.0.1";
+        deviceConfig.port = 7782;
+        deviceConfig.maxPacketsPerSecond = 100;
+
+        BroadcasterConfig rgbConfig;
+        rgbConfig.enabled = true;
+        rgbConfig.address = "127.0.0.1";
+        rgbConfig.port = 7783;
+        rgbConfig.maxPacketsPerSecond = 100;
+
+        SUBCASE("Initialize DEVICE and RGB streams") {
+            bool deviceResult = InitializeStream(StreamType::DEVICE, deviceConfig);
+            bool rgbResult = InitializeStream(StreamType::RGB, rgbConfig);
+
+            CHECK(deviceResult == true);
+            CHECK(rgbResult == true);
+            CHECK(IsStreamRunning(StreamType::DEVICE) == true);
+            CHECK(IsStreamRunning(StreamType::RGB) == true);
+
+            ShutdownStream(StreamType::DEVICE);
+            ShutdownStream(StreamType::RGB);
+        }
+
+        SUBCASE("Independent stream shutdown") {
+            InitializeStream(StreamType::DEVICE, deviceConfig);
+            InitializeStream(StreamType::RGB, rgbConfig);
+
+            // Shutdown only DEVICE stream
+            ShutdownStream(StreamType::DEVICE);
+            CHECK(IsStreamRunning(StreamType::DEVICE) == false);
+            CHECK(IsStreamRunning(StreamType::RGB) == true);
+
+            // RGB stream should still work
+            EventCollector* rgbCollector = GetEventCollector(StreamType::RGB);
+            CHECK(rgbCollector != nullptr);
+
+            ShutdownStream(StreamType::RGB);
+        }
+
+        SUBCASE("ShutdownAllStreams") {
+            InitializeStream(StreamType::DEVICE, deviceConfig);
+            InitializeStream(StreamType::RGB, rgbConfig);
+
+            CHECK(IsStreamRunning(StreamType::DEVICE) == true);
+            CHECK(IsStreamRunning(StreamType::RGB) == true);
+
+            ShutdownAllStreams();
+
+            CHECK(IsStreamRunning(StreamType::DEVICE) == false);
+            CHECK(IsStreamRunning(StreamType::RGB) == false);
+        }
+    }
+
+    TEST_CASE("Stream-specific event collectors") {
+        BroadcasterConfig deviceConfig;
+        deviceConfig.enabled = true;
+        deviceConfig.address = "127.0.0.1";
+        deviceConfig.port = 7784;
+        deviceConfig.maxPacketsPerSecond = 100;
+
+        BroadcasterConfig rgbConfig;
+        rgbConfig.enabled = true;
+        rgbConfig.address = "127.0.0.1";
+        rgbConfig.port = 7785;
+        rgbConfig.maxPacketsPerSecond = 100;
+
+        InitializeStream(StreamType::DEVICE, deviceConfig);
+        InitializeStream(StreamType::RGB, rgbConfig);
+
+        EventCollector* deviceCollector = GetEventCollector(StreamType::DEVICE);
+        EventCollector* rgbCollector = GetEventCollector(StreamType::RGB);
+
+        REQUIRE(deviceCollector != nullptr);
+        REQUIRE(rgbCollector != nullptr);
+        CHECK(deviceCollector != rgbCollector); // Different collectors
+
+        // Submit events to different collectors
+        deviceCollector->Solenoid(1, 255, 0x0300, 1);
+        deviceCollector->Lamp(2, 128, 0x0200, 2);
+        deviceCollector->GI(3, 200, 0x0100, 3);
+
+        rgbCollector->RGB(1, 255, 0, 0, 0x0400, 1);
+        rgbCollector->RGB(2, 0, 255, 0, 0x0400, 2);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        // Both streams should have sent events
+        Statistics deviceStats = GetStreamStatistics(StreamType::DEVICE);
+        Statistics rgbStats = GetStreamStatistics(StreamType::RGB);
+
+        CHECK(deviceStats.eventsSent > 0);
+        CHECK(rgbStats.eventsSent > 0);
+
+        ShutdownAllStreams();
+    }
+
+    TEST_CASE("Stream isolation - events don't cross streams") {
+        BroadcasterConfig deviceConfig;
+        deviceConfig.enabled = true;
+        deviceConfig.address = "127.0.0.1";
+        deviceConfig.port = 7786;
+
+        BroadcasterConfig rgbConfig;
+        rgbConfig.enabled = true;
+        rgbConfig.address = "127.0.0.1";
+        rgbConfig.port = 7787;
+
+        InitializeStream(StreamType::DEVICE, deviceConfig);
+        InitializeStream(StreamType::RGB, rgbConfig);
+
+        EventCollector* deviceCollector = GetEventCollector(StreamType::DEVICE);
+        EventCollector* rgbCollector = GetEventCollector(StreamType::RGB);
+
+        // Submit 10 events to device stream
+        for (int i = 0; i < 10; i++) {
+            deviceCollector->Solenoid(i, 255, 0x0300, i);
+        }
+
+        // Submit 5 events to RGB stream
+        for (int i = 0; i < 5; i++) {
+            rgbCollector->RGB(i, 255, 128, 64, 0x0400, i);
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        Statistics deviceStats = GetStreamStatistics(StreamType::DEVICE);
+        Statistics rgbStats = GetStreamStatistics(StreamType::RGB);
+
+        // Device stream should have ~10 events, RGB should have ~5
+        CHECK(deviceStats.eventsSent >= 10);
+        CHECK(rgbStats.eventsSent >= 5);
+
+        ShutdownAllStreams();
+    }
+
+    TEST_CASE("Legacy API compatibility with multi-stream") {
+        BroadcasterConfig config;
+        config.enabled = true;
+        config.address = "127.0.0.1";
+        config.port = 7788;
+
+        // Use legacy API
+        bool result = InitializeDOFUDPBroadcaster(config);
+        CHECK(result == true);
+
+        // Legacy API should work with DEVICE stream
+        CHECK(IsDOFUDPBroadcasterRunning() == true);
+        CHECK(IsStreamRunning(StreamType::DEVICE) == true);
+
+        EventCollector* legacyCollector = GetDOFEventCollector();
+        EventCollector* deviceCollector = GetEventCollector(StreamType::DEVICE);
+
+        CHECK(legacyCollector != nullptr);
+        CHECK(legacyCollector == deviceCollector); // Should be same collector
+
+        ShutdownDOFUDPBroadcaster();
+        CHECK(IsStreamRunning(StreamType::DEVICE) == false);
+    }
+
+    TEST_CASE("Double initialization of same stream") {
+        BroadcasterConfig config;
+        config.enabled = true;
+        config.address = "127.0.0.1";
+        config.port = 7789;
+
+        bool firstInit = InitializeStream(StreamType::DEVICE, config);
+        CHECK(firstInit == true);
+
+        // Second initialization should fail
+        bool secondInit = InitializeStream(StreamType::DEVICE, config);
+        CHECK(secondInit == false);
+
+        ShutdownStream(StreamType::DEVICE);
+    }
+
+    TEST_CASE("Stream statistics independence") {
+        BroadcasterConfig config1;
+        config1.enabled = true;
+        config1.address = "127.0.0.1";
+        config1.port = 7790;
+
+        BroadcasterConfig config2;
+        config2.enabled = true;
+        config2.address = "127.0.0.1";
+        config2.port = 7791;
+
+        InitializeStream(StreamType::DEVICE, config1);
+        InitializeStream(StreamType::RGB, config2);
+
+        EventCollector* deviceCollector = GetEventCollector(StreamType::DEVICE);
+        EventCollector* rgbCollector = GetEventCollector(StreamType::RGB);
+
+        // Submit different numbers of events
+        for (int i = 0; i < 20; i++) {
+            deviceCollector->Solenoid(i, 255, 0x0300, i);
+        }
+
+        for (int i = 0; i < 10; i++) {
+            rgbCollector->RGB(i, 255, 0, 0, 0x0400, i);
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        Statistics deviceStats = GetStreamStatistics(StreamType::DEVICE);
+        Statistics rgbStats = GetStreamStatistics(StreamType::RGB);
+
+        // Stats should be independent
+        CHECK(deviceStats.eventsSent > rgbStats.eventsSent);
+
+        // Reset only RGB stats
+        ResetStreamStatistics(StreamType::RGB);
+
+        Statistics deviceStats2 = GetStreamStatistics(StreamType::DEVICE);
+        Statistics rgbStats2 = GetStreamStatistics(StreamType::RGB);
+
+        CHECK(deviceStats2.eventsSent > 0); // Device stats unchanged
+        CHECK(rgbStats2.eventsSent == 0);   // RGB stats reset
+
+        ShutdownAllStreams();
+    }
+}
