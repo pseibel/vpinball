@@ -25,6 +25,9 @@ standalone/ios/VPinball/Frameworks
 standalone/android/app/src/main/assets
 standalone/android/app/src/main/jniLibs
 
+# Test executables
+tests/dof-udp-test
+
 # local Microsoft Visual Studio files
 VisualPinball.sln
 /*.vcxproj
