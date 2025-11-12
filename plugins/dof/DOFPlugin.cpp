@@ -53,6 +53,8 @@ static unsigned int getDevSrcId;
 static unsigned int onDevSrcChangedId;
 static unsigned int getInputSrcId;
 static unsigned int onInputSrcChangedId;
+static unsigned int getSegSrcId;
+static unsigned int onSegSrcChangedId;
 
 static std::mutex sourceMutex;
 static bool isRunning = false;
@@ -74,6 +76,15 @@ struct AdditionalDevSrc {
 };
 static std::vector<AdditionalDevSrc> additionalDevSources;
 
+// Segment Display Sources
+struct SegmentDisplaySource {
+   SegSrcId segSrc;
+   std::string endpointName;
+   unsigned int nElements;
+   std::vector<uint32_t> lastFrameIds;  // Track frame IDs to avoid duplicate sends
+};
+static std::vector<SegmentDisplaySource> segmentDisplaySources;
+
 static std::thread pollThread;
 
 static DOF::DOF* pDOF = nullptr;
@@ -81,6 +92,7 @@ static DOF::DOF* pDOF = nullptr;
 // UDP Broadcasting - Multi-Stream
 static DOFUDP::EventCollector* pDeviceEventCollector = nullptr; // Device events (Port 7778)
 static DOFUDP::EventCollector* pRGBEventCollector = nullptr;    // RGB events (Port 7779)
+static DOFUDP::EventCollector* pScoreEventCollector = nullptr;  // Segment displays (Port 7781)
 
 static void OnPollStates(void* userData);
 
@@ -278,6 +290,40 @@ static void PollThread(const string& tablePath, const string& gameId)
             }
          }
 
+         // Poll segment display sources
+         for (size_t srcIdx = 0; srcIdx < segmentDisplaySources.size(); srcIdx++)
+         {
+            auto& src = segmentDisplaySources[srcIdx];
+
+            // Get current display state
+            SegDisplayFrame frame = src.segSrc.GetState(src.segSrc.id);
+
+            // Only send if frame changed (check frame ID)
+            if (frame.frameId != src.lastFrameIds[0])
+            {
+               src.lastFrameIds[0] = frame.frameId;
+
+               // Convert element types to uint8_t array
+               uint8_t elementTypes[CTLPI_SEG_MAX_DISP_ELEMENTS];
+               for (unsigned int i = 0; i < src.nElements; i++) {
+                  elementTypes[i] = static_cast<uint8_t>(src.segSrc.elementType[i]);
+               }
+
+               // Submit to Score stream collector
+               if (pScoreEventCollector) {
+                  pScoreEventCollector->SegmentDisplay(
+                     src.segSrc.id.id,           // displayId
+                     src.segSrc.groupId.id,      // groupId
+                     frame.frameId,              // frameId
+                     src.segSrc.hardware,        // hardware hint
+                     src.nElements,              // nElements
+                     elementTypes,               // elementTypes
+                     frame.frame                 // segment data (floats)
+                  );
+               }
+            }
+         }
+
          isInitialState = false;
       }
 
@@ -455,6 +501,51 @@ static void OnInputSrcChanged(const unsigned int eventId, void* userData, void* 
    LOGI("DOFPlugin: OnInputSrcChanged - Found %d PinMAME inputs", pinmameInputSrc.nInputs);
 }
 
+static void OnSegSrcChanged(const unsigned int eventId, void* userData, void* msgData)
+{
+   std::lock_guard<std::mutex> lock(sourceMutex);
+
+   // Clear existing segment display sources
+   segmentDisplaySources.clear();
+
+   // Query all segment display sources
+   GetSegSrcMsg getSrcMsg = { 0, 0, nullptr };
+   msgApi->BroadcastMsg(endpointId, getSegSrcId, &getSrcMsg);
+
+   if (getSrcMsg.count == 0) {
+      LOGI("DOFPlugin: OnSegSrcChanged - No segment display sources");
+      return;
+   }
+
+   // Allocate and query again with proper buffer
+   getSrcMsg.maxEntryCount = getSrcMsg.count;
+   getSrcMsg.count = 0;
+   getSrcMsg.entries = new SegSrcId[getSrcMsg.maxEntryCount];
+   msgApi->BroadcastMsg(endpointId, getSegSrcId, &getSrcMsg);
+
+   // Store all segment display sources
+   MsgEndpointInfo info;
+   for (unsigned int i = 0; i < getSrcMsg.count; i++) {
+      memset(&info, 0, sizeof(info));
+      msgApi->GetEndpointInfo(getSrcMsg.entries[i].id.endpointId, &info);
+
+      SegmentDisplaySource src;
+      src.segSrc = getSrcMsg.entries[i];
+      src.endpointName = info.id ? info.id : "Unknown";
+      src.nElements = getSrcMsg.entries[i].nElements;
+      src.lastFrameIds.resize(1, 0);  // Track one frame ID per display
+
+      segmentDisplaySources.push_back(src);
+
+      LOGI("DOFPlugin: Found segment display - Endpoint:%s Elements:%d Hardware:0x%08X",
+           src.endpointName.c_str(), src.nElements, getSrcMsg.entries[i].hardware);
+   }
+
+   delete[] getSrcMsg.entries;
+
+   LOGI("DOFPlugin: OnSegSrcChanged - Found %d segment display source(s)", (int)segmentDisplaySources.size());
+}
+
 }
 
 using namespace DOFPlugin;
@@ -480,12 +571,16 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginLoad(const uint32_t sessionId, const MsgPlug
    onDevSrcChangedId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_DEVICE_ON_SRC_CHG_MSG);
    getInputSrcId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_INPUT_GET_SRC_MSG);
    onInputSrcChangedId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_INPUT_ON_SRC_CHG_MSG);
+   getSegSrcId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_SEG_GET_SRC_MSG);
+   onSegSrcChangedId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_SEG_ON_SRC_CHG_MSG);
 
    msgApi->SubscribeMsg(endpointId, onDevSrcChangedId, OnDevSrcChanged, nullptr);
    msgApi->SubscribeMsg(endpointId, onInputSrcChangedId, OnInputSrcChanged, nullptr);
+   msgApi->SubscribeMsg(endpointId, onSegSrcChangedId, OnSegSrcChanged, nullptr);
 
    OnDevSrcChanged(onDevSrcChangedId, nullptr, nullptr);
    OnInputSrcChanged(onInputSrcChangedId, nullptr, nullptr);
+   OnSegSrcChanged(onSegSrcChangedId, nullptr, nullptr);
 
    VPXInfo vpxInfo;
    vpxApi->GetVpxInfo(&vpxInfo);
@@ -537,6 +632,27 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginLoad(const uint32_t sessionId, const MsgPlug
    } else {
       LOGI("DOFPlugin: UDP RGB Stream disabled");
    }
+
+   // Initialize UDP Broadcasting - Score Stream (Segment Displays)
+   DOFUDP::BroadcasterConfig scoreConfig;
+   scoreConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamEnabled", true);
+   scoreConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamAddress", "255.255.255.255");
+   scoreConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamPort", 7781);
+   scoreConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamMaxPacketsPerSecond", 60);
+   scoreConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamQueueSize", 256);
+
+   if (scoreConfig.enabled) {
+      if (DOFUDP::InitializeStream(DOFUDP::StreamType::SCORE, scoreConfig)) {
+         pScoreEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::SCORE);
+         if (pScoreEventCollector) {
+            LOGI("DOFPlugin: UDP Score Stream initialized on %s:%d", scoreConfig.address.c_str(), scoreConfig.port);
+         }
+      } else {
+         LOGE("DOFPlugin: Failed to initialize UDP Score Stream");
+      }
+   } else {
+      LOGI("DOFPlugin: UDP Score Stream disabled");
+   }
 }
 
 MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
@@ -546,11 +662,12 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
       pollThread.join();
 
    // Shutdown UDP Broadcasting - All Streams
-   if (pDeviceEventCollector || pRGBEventCollector) {
+   if (pDeviceEventCollector || pRGBEventCollector || pScoreEventCollector) {
       LOGI("DOFPlugin: Shutting down UDP Broadcasting streams");
       DOFUDP::ShutdownAllStreams();
       pDeviceEventCollector = nullptr;
       pRGBEventCollector = nullptr;
+      pScoreEventCollector = nullptr;
    }
 
    ClearDevices();
@@ -564,6 +681,7 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
    msgApi->UnsubscribeMsg(onControllerGameEndId, OnControllerGameEnd);
    msgApi->UnsubscribeMsg(onDevSrcChangedId, OnDevSrcChanged);
    msgApi->UnsubscribeMsg(onInputSrcChangedId, OnInputSrcChanged);
+   msgApi->UnsubscribeMsg(onSegSrcChangedId, OnSegSrcChanged);
 
    msgApi->ReleaseMsgID(onControllerGameStartId);
    msgApi->ReleaseMsgID(onControllerGameEndId);
@@ -571,6 +689,8 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
    msgApi->ReleaseMsgID(onDevSrcChangedId);
    msgApi->ReleaseMsgID(getInputSrcId);
    msgApi->ReleaseMsgID(onInputSrcChangedId);
+   msgApi->ReleaseMsgID(getSegSrcId);
+   msgApi->ReleaseMsgID(onSegSrcChangedId);
 
    msgApi = nullptr;
 }
