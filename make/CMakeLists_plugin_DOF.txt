@@ -16,7 +16,6 @@ if(BUILD_SHARED)
       ${CMAKE_SOURCE_DIR}/third-party/include
       plugins
       plugins/dof
-      plugins/udp-broadcast
    )
 
    if(PluginPlatform STREQUAL "windows")
@@ -54,13 +53,13 @@ if(BUILD_SHARED)
             OUTPUT_NAME "plugin-dof64"
          )
          target_link_directories(DOFPlugin PUBLIC ${CMAKE_SOURCE_DIR}/third-party/build-libs/windows-x64)
-         target_link_libraries(DOFPlugin dof64.lib ws2_32)
+         target_link_libraries(DOFPlugin dof64.lib)
       else()
          set_target_properties(DOFPlugin PROPERTIES
             OUTPUT_NAME "plugin-dof"
          )
          target_link_directories(DOFPlugin PUBLIC ${CMAKE_SOURCE_DIR}/third-party/build-libs/windows-x86)
-         target_link_libraries(DOFPlugin dof.lib ws2_32)
+         target_link_libraries(DOFPlugin dof.lib)
       endif()
    else()
       set_target_properties(DOFPlugin PROPERTIES
@@ -127,7 +126,6 @@ if(BUILD_STATIC)
       ${CMAKE_SOURCE_DIR}/third-party/include
       plugins
       plugins/dof
-      plugins/udp-broadcast
    )
 
    set_target_properties(DOFPlugin PROPERTIES

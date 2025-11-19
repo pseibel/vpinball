@@ -580,54 +580,51 @@ void onGetAPI(const unsigned int eventId, void* userData, void* eventData)
 ///////////////////////////////////////////////////////////////////////////////
 
 // Device Stream Settings
-static MSGPI_BOOL_SETTING(deviceStreamEnabled, "device.enabled", "Device Stream Enabled", "Enable UDP broadcasting of device events", true, true);
-static char deviceStreamAddr[64] = "255.255.255.255";
-static MsgSettingDef deviceStreamAddress { .propId="device.address", .name="Device Stream Address", .description="Broadcast address for device stream", .isUserEditable=1, .type=MSGPI_SETTING_TYPE_STRING, .stringDef = { "255.255.255.255", deviceStreamAddr, sizeof(deviceStreamAddr) } };
-static MSGPI_INT_SETTING(deviceStreamPort, "device.port", "Device Stream Port", "UDP port for device events", true, 1024, 65535, 7778);
-static MSGPI_INT_SETTING(deviceStreamMaxPPS, "device.maxPacketsPerSecond", "Device Max Packets/Sec", "Maximum packets per second for device stream", true, 1, 1000, 120);
-static MSGPI_INT_SETTING(deviceStreamQueueSize, "device.queueSize", "Device Queue Size", "Event queue size for device stream", true, 64, 16384, 4096);
+MSGPI_BOOL_VAL_SETTING(deviceStreamEnabled, "device.enabled", "Device Stream Enabled", "Enable UDP broadcasting of device events", true, true);
+MSGPI_STRING_VAL_SETTING(deviceStreamAddress, "device.address", "Device Stream Address", "Broadcast address for device stream", true, "255.255.255.255", 64);
+MSGPI_INT_VAL_SETTING(deviceStreamPort, "device.port", "Device Stream Port", "UDP port for device events", true, 1024, 65535, 7778);
+MSGPI_INT_VAL_SETTING(deviceStreamMaxPPS, "device.maxPacketsPerSecond", "Device Max Packets/Sec", "Maximum packets per second for device stream", true, 1, 1000, 120);
+MSGPI_INT_VAL_SETTING(deviceStreamQueueSize, "device.queueSize", "Device Queue Size", "Event queue size for device stream", true, 64, 16384, 4096);
 
 // RGB Stream Settings
-static MSGPI_BOOL_SETTING(rgbStreamEnabled, "rgb.enabled", "RGB Stream Enabled", "Enable UDP broadcasting of RGB events", true, true);
-static char rgbStreamAddr[64] = "255.255.255.255";
-static MsgSettingDef rgbStreamAddress { .propId="rgb.address", .name="RGB Stream Address", .description="Broadcast address for RGB stream", .isUserEditable=1, .type=MSGPI_SETTING_TYPE_STRING, .stringDef = { "255.255.255.255", rgbStreamAddr, sizeof(rgbStreamAddr) } };
-static MSGPI_INT_SETTING(rgbStreamPort, "rgb.port", "RGB Stream Port", "UDP port for RGB events", true, 1024, 65535, 7779);
-static MSGPI_INT_SETTING(rgbStreamMaxPPS, "rgb.maxPacketsPerSecond", "RGB Max Packets/Sec", "Maximum packets per second for RGB stream", true, 1, 1000, 120);
-static MSGPI_INT_SETTING(rgbStreamQueueSize, "rgb.queueSize", "RGB Queue Size", "Event queue size for RGB stream", true, 64, 16384, 4096);
+MSGPI_BOOL_VAL_SETTING(rgbStreamEnabled, "rgb.enabled", "RGB Stream Enabled", "Enable UDP broadcasting of RGB events", true, true);
+MSGPI_STRING_VAL_SETTING(rgbStreamAddress, "rgb.address", "RGB Stream Address", "Broadcast address for RGB stream", true, "255.255.255.255", 64);
+MSGPI_INT_VAL_SETTING(rgbStreamPort, "rgb.port", "RGB Stream Port", "UDP port for RGB events", true, 1024, 65535, 7779);
+MSGPI_INT_VAL_SETTING(rgbStreamMaxPPS, "rgb.maxPacketsPerSecond", "RGB Max Packets/Sec", "Maximum packets per second for RGB stream", true, 1, 1000, 120);
+MSGPI_INT_VAL_SETTING(rgbStreamQueueSize, "rgb.queueSize", "RGB Queue Size", "Event queue size for RGB stream", true, 64, 16384, 4096);
 
 // Score Stream Settings
-static MSGPI_BOOL_SETTING(scoreStreamEnabled, "score.enabled", "Score Stream Enabled", "Enable UDP broadcasting of score/segment events", true, true);
-static char scoreStreamAddr[64] = "255.255.255.255";
-static MsgSettingDef scoreStreamAddress { .propId="score.address", .name="Score Stream Address", .description="Broadcast address for score stream", .isUserEditable=1, .type=MSGPI_SETTING_TYPE_STRING, .stringDef = { "255.255.255.255", scoreStreamAddr, sizeof(scoreStreamAddr) } };
-static MSGPI_INT_SETTING(scoreStreamPort, "score.port", "Score Stream Port", "UDP port for score/segment events", true, 1024, 65535, 7781);
-static MSGPI_INT_SETTING(scoreStreamMaxPPS, "score.maxPacketsPerSecond", "Score Max Packets/Sec", "Maximum packets per second for score stream", true, 1, 1000, 60);
-static MSGPI_INT_SETTING(scoreStreamQueueSize, "score.queueSize", "Score Queue Size", "Event queue size for score stream", true, 64, 16384, 256);
+MSGPI_BOOL_VAL_SETTING(scoreStreamEnabled, "score.enabled", "Score Stream Enabled", "Enable UDP broadcasting of score/segment events", true, true);
+MSGPI_STRING_VAL_SETTING(scoreStreamAddress, "score.address", "Score Stream Address", "Broadcast address for score stream", true, "255.255.255.255", 64);
+MSGPI_INT_VAL_SETTING(scoreStreamPort, "score.port", "Score Stream Port", "UDP port for score/segment events", true, 1024, 65535, 7781);
+MSGPI_INT_VAL_SETTING(scoreStreamMaxPPS, "score.maxPacketsPerSecond", "Score Max Packets/Sec", "Maximum packets per second for score stream", true, 1, 1000, 60);
+MSGPI_INT_VAL_SETTING(scoreStreamQueueSize, "score.queueSize", "Score Queue Size", "Event queue size for score stream", true, 64, 16384, 256);
 
 bool LoadConfiguration()
 {
    // Load Device Stream configuration from properties
    DOFUDP::BroadcasterConfig deviceConfig;
-   deviceConfig.enabled = deviceStreamEnabled.boolDef.val != 0;
-   deviceConfig.address = std::string(deviceStreamAddress.stringDef.val);
-   deviceConfig.port = deviceStreamPort.intDef.val;
-   deviceConfig.maxPacketsPerSecond = deviceStreamMaxPPS.intDef.val;
-   deviceConfig.queueSize = deviceStreamQueueSize.intDef.val;
+   deviceConfig.enabled = deviceStreamEnabled_Val != 0;
+   deviceConfig.address = std::string(deviceStreamAddress_Val);
+   deviceConfig.port = deviceStreamPort_Val;
+   deviceConfig.maxPacketsPerSecond = deviceStreamMaxPPS_Val;
+   deviceConfig.queueSize = deviceStreamQueueSize_Val;
 
    // Load RGB Stream configuration from properties
    DOFUDP::BroadcasterConfig rgbConfig;
-   rgbConfig.enabled = rgbStreamEnabled.boolDef.val != 0;
-   rgbConfig.address = std::string(rgbStreamAddress.stringDef.val);
-   rgbConfig.port = rgbStreamPort.intDef.val;
-   rgbConfig.maxPacketsPerSecond = rgbStreamMaxPPS.intDef.val;
-   rgbConfig.queueSize = rgbStreamQueueSize.intDef.val;
+   rgbConfig.enabled = rgbStreamEnabled_Val != 0;
+   rgbConfig.address = std::string(rgbStreamAddress_Val);
+   rgbConfig.port = rgbStreamPort_Val;
+   rgbConfig.maxPacketsPerSecond = rgbStreamMaxPPS_Val;
+   rgbConfig.queueSize = rgbStreamQueueSize_Val;
 
    // Load Score Stream configuration from properties
    DOFUDP::BroadcasterConfig scoreConfig;
-   scoreConfig.enabled = scoreStreamEnabled.boolDef.val != 0;
-   scoreConfig.address = std::string(scoreStreamAddress.stringDef.val);
-   scoreConfig.port = scoreStreamPort.intDef.val;
-   scoreConfig.maxPacketsPerSecond = scoreStreamMaxPPS.intDef.val;
-   scoreConfig.queueSize = scoreStreamQueueSize.intDef.val;
+   scoreConfig.enabled = scoreStreamEnabled_Val != 0;
+   scoreConfig.address = std::string(scoreStreamAddress_Val);
+   scoreConfig.port = scoreStreamPort_Val;
+   scoreConfig.maxPacketsPerSecond = scoreStreamMaxPPS_Val;
+   scoreConfig.queueSize = scoreStreamQueueSize_Val;
 
    // Initialize streams
    if (deviceConfig.enabled) {

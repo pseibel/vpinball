@@ -16,9 +16,9 @@ if(BUILD_SHARED)
    add_library(UDPBroadcastPlugin MODULE ${UDPBROADCAST_PLUGIN_SOURCES})
 
    target_include_directories(UDPBroadcastPlugin PUBLIC
-      plugins/udp-broadcast
+      plugins/plugins/udp-broadcast
       ${CMAKE_SOURCE_DIR}/third-party/include
-      src/plugins
+      plugins/plugins
       src
    )
 
@@ -91,9 +91,9 @@ if(BUILD_STATIC)
    add_library(UDPBroadcastPlugin STATIC ${UDPBROADCAST_PLUGIN_SOURCES})
 
    target_include_directories(UDPBroadcastPlugin PUBLIC
-      plugins/udp-broadcast
+      plugins/plugins/udp-broadcast
       ${CMAKE_SOURCE_DIR}/third-party/include
-      src/plugins
+      plugins/plugins
       src
    )
 
