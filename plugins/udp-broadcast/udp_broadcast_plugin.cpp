@@ -515,7 +515,7 @@ void API_SegmentDisplay(uint8_t displayId, uint8_t displayType, uint8_t digitCou
 
 uint64_t API_GetEventsSubmitted()
 {
-   return pDeviceEventCollector ? pDeviceEventCollector->GetStatistics().eventsSubmitted : 0;
+   return pDeviceEventCollector ? pDeviceEventCollector->GetStatistics().eventsSent : 0;
 }
 
 uint64_t API_GetEventsDropped()
@@ -525,22 +525,23 @@ uint64_t API_GetEventsDropped()
 
 uint64_t API_GetSegmentDisplaysSubmitted()
 {
-   return pScoreEventCollector ? pScoreEventCollector->GetStatistics().segmentDisplaysSubmitted : 0;
+   return pScoreEventCollector ? pScoreEventCollector->GetStatistics().eventsSent : 0;
 }
 
 uint64_t API_GetSegmentDisplaysDropped()
 {
-   return pScoreEventCollector ? pScoreEventCollector->GetStatistics().segmentDisplaysDropped : 0;
+   return pScoreEventCollector ? pScoreEventCollector->GetStatistics().eventsDropped : 0;
 }
 
 uint64_t API_GetTableInfosSubmitted()
 {
-   return pDeviceEventCollector ? pDeviceEventCollector->GetStatistics().tableInfosSubmitted : 0;
+   // Table info is sent via device stream, count as events
+   return pDeviceEventCollector ? pDeviceEventCollector->GetStatistics().eventsSent : 0;
 }
 
 uint64_t API_GetTableInfosDropped()
 {
-   return pDeviceEventCollector ? pDeviceEventCollector->GetStatistics().tableInfosDropped : 0;
+   return pDeviceEventCollector ? pDeviceEventCollector->GetStatistics().eventsDropped : 0;
 }
 
 // API structure instance
@@ -575,61 +576,58 @@ void onGetAPI(const unsigned int eventId, void* userData, void* eventData)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Configuration Loading
+// Configuration Loading (using new properties API)
 ///////////////////////////////////////////////////////////////////////////////
 
-static std::string GetSettingString(const char* section, const char* key, const std::string& def = std::string())
-{
-   char buf[256];
-   if (msgApi) {
-      msgApi->GetSetting(section, key, buf, sizeof(buf));
-      return buf[0] ? std::string(buf) : def;
-   }
-   return def;
-}
+// Device Stream Settings
+static MSGPI_BOOL_SETTING(deviceStreamEnabled, "device.enabled", "Device Stream Enabled", "Enable UDP broadcasting of device events", true, true);
+static char deviceStreamAddr[64] = "255.255.255.255";
+static MsgSettingDef deviceStreamAddress { .propId="device.address", .name="Device Stream Address", .description="Broadcast address for device stream", .isUserEditable=1, .type=MSGPI_SETTING_TYPE_STRING, .stringDef = { "255.255.255.255", deviceStreamAddr, sizeof(deviceStreamAddr) } };
+static MSGPI_INT_SETTING(deviceStreamPort, "device.port", "Device Stream Port", "UDP port for device events", true, 1024, 65535, 7778);
+static MSGPI_INT_SETTING(deviceStreamMaxPPS, "device.maxPacketsPerSecond", "Device Max Packets/Sec", "Maximum packets per second for device stream", true, 1, 1000, 120);
+static MSGPI_INT_SETTING(deviceStreamQueueSize, "device.queueSize", "Device Queue Size", "Event queue size for device stream", true, 64, 16384, 4096);
 
-static int GetSettingInt(const char* section, const char* key, int def = 0)
-{
-   char buf[256];
-   if (msgApi) {
-      msgApi->GetSetting(section, key, buf, sizeof(buf));
-      if (buf[0]) {
-         return std::atoi(buf);
-      }
-   }
-   return def;
-}
+// RGB Stream Settings
+static MSGPI_BOOL_SETTING(rgbStreamEnabled, "rgb.enabled", "RGB Stream Enabled", "Enable UDP broadcasting of RGB events", true, true);
+static char rgbStreamAddr[64] = "255.255.255.255";
+static MsgSettingDef rgbStreamAddress { .propId="rgb.address", .name="RGB Stream Address", .description="Broadcast address for RGB stream", .isUserEditable=1, .type=MSGPI_SETTING_TYPE_STRING, .stringDef = { "255.255.255.255", rgbStreamAddr, sizeof(rgbStreamAddr) } };
+static MSGPI_INT_SETTING(rgbStreamPort, "rgb.port", "RGB Stream Port", "UDP port for RGB events", true, 1024, 65535, 7779);
+static MSGPI_INT_SETTING(rgbStreamMaxPPS, "rgb.maxPacketsPerSecond", "RGB Max Packets/Sec", "Maximum packets per second for RGB stream", true, 1, 1000, 120);
+static MSGPI_INT_SETTING(rgbStreamQueueSize, "rgb.queueSize", "RGB Queue Size", "Event queue size for RGB stream", true, 64, 16384, 4096);
 
-static bool GetSettingBool(const char* section, const char* key, bool def = false)
-{
-   return GetSettingInt(section, key, def ? 1 : 0) != 0;
-}
+// Score Stream Settings
+static MSGPI_BOOL_SETTING(scoreStreamEnabled, "score.enabled", "Score Stream Enabled", "Enable UDP broadcasting of score/segment events", true, true);
+static char scoreStreamAddr[64] = "255.255.255.255";
+static MsgSettingDef scoreStreamAddress { .propId="score.address", .name="Score Stream Address", .description="Broadcast address for score stream", .isUserEditable=1, .type=MSGPI_SETTING_TYPE_STRING, .stringDef = { "255.255.255.255", scoreStreamAddr, sizeof(scoreStreamAddr) } };
+static MSGPI_INT_SETTING(scoreStreamPort, "score.port", "Score Stream Port", "UDP port for score/segment events", true, 1024, 65535, 7781);
+static MSGPI_INT_SETTING(scoreStreamMaxPPS, "score.maxPacketsPerSecond", "Score Max Packets/Sec", "Maximum packets per second for score stream", true, 1, 1000, 60);
+static MSGPI_INT_SETTING(scoreStreamQueueSize, "score.queueSize", "Score Queue Size", "Event queue size for score stream", true, 64, 16384, 256);
 
 bool LoadConfiguration()
 {
-   // Load Device Stream configuration
+   // Load Device Stream configuration from properties
    DOFUDP::BroadcasterConfig deviceConfig;
-   deviceConfig.enabled = GetSettingBool("DOF", "UDPDeviceStreamEnabled", true);
-   deviceConfig.address = GetSettingString("DOF", "UDPDeviceStreamAddress", "255.255.255.255");
-   deviceConfig.port = GetSettingInt("DOF", "UDPDeviceStreamPort", 7778);
-   deviceConfig.maxPacketsPerSecond = GetSettingInt("DOF", "UDPDeviceStreamMaxPacketsPerSecond", 120);
-   deviceConfig.queueSize = GetSettingInt("DOF", "UDPDeviceStreamQueueSize", 4096);
+   deviceConfig.enabled = deviceStreamEnabled.boolDef.val != 0;
+   deviceConfig.address = std::string(deviceStreamAddress.stringDef.val);
+   deviceConfig.port = deviceStreamPort.intDef.val;
+   deviceConfig.maxPacketsPerSecond = deviceStreamMaxPPS.intDef.val;
+   deviceConfig.queueSize = deviceStreamQueueSize.intDef.val;
 
-   // Load RGB Stream configuration
+   // Load RGB Stream configuration from properties
    DOFUDP::BroadcasterConfig rgbConfig;
-   rgbConfig.enabled = GetSettingBool("DOF", "UDPRGBStreamEnabled", true);
-   rgbConfig.address = GetSettingString("DOF", "UDPRGBStreamAddress", "255.255.255.255");
-   rgbConfig.port = GetSettingInt("DOF", "UDPRGBStreamPort", 7779);
-   rgbConfig.maxPacketsPerSecond = GetSettingInt("DOF", "UDPRGBStreamMaxPacketsPerSecond", 120);
-   rgbConfig.queueSize = GetSettingInt("DOF", "UDPRGBStreamQueueSize", 4096);
+   rgbConfig.enabled = rgbStreamEnabled.boolDef.val != 0;
+   rgbConfig.address = std::string(rgbStreamAddress.stringDef.val);
+   rgbConfig.port = rgbStreamPort.intDef.val;
+   rgbConfig.maxPacketsPerSecond = rgbStreamMaxPPS.intDef.val;
+   rgbConfig.queueSize = rgbStreamQueueSize.intDef.val;
 
-   // Load Score Stream configuration
+   // Load Score Stream configuration from properties
    DOFUDP::BroadcasterConfig scoreConfig;
-   scoreConfig.enabled = GetSettingBool("DOF", "UDPScoreStreamEnabled", true);
-   scoreConfig.address = GetSettingString("DOF", "UDPScoreStreamAddress", "255.255.255.255");
-   scoreConfig.port = GetSettingInt("DOF", "UDPScoreStreamPort", 7781);
-   scoreConfig.maxPacketsPerSecond = GetSettingInt("DOF", "UDPScoreStreamMaxPacketsPerSecond", 60);
-   scoreConfig.queueSize = GetSettingInt("DOF", "UDPScoreStreamQueueSize", 256);
+   scoreConfig.enabled = scoreStreamEnabled.boolDef.val != 0;
+   scoreConfig.address = std::string(scoreStreamAddress.stringDef.val);
+   scoreConfig.port = scoreStreamPort.intDef.val;
+   scoreConfig.maxPacketsPerSecond = scoreStreamMaxPPS.intDef.val;
+   scoreConfig.queueSize = scoreStreamQueueSize.intDef.val;
 
    // Initialize streams
    if (deviceConfig.enabled) {
@@ -727,6 +725,25 @@ MSGPI_EXPORT void MSGPIAPI UDPBroadcastPluginLoad(const uint32_t sessionId, cons
    OnInputSrcChanged(onInputSrcChangedId, nullptr, nullptr);
    OnSegSrcChanged(onSegSrcChangedId, nullptr, nullptr);
 
+   // Register all settings with the new properties API
+   msgApi->RegisterSetting(endpointId, &deviceStreamEnabled);
+   msgApi->RegisterSetting(endpointId, &deviceStreamAddress);
+   msgApi->RegisterSetting(endpointId, &deviceStreamPort);
+   msgApi->RegisterSetting(endpointId, &deviceStreamMaxPPS);
+   msgApi->RegisterSetting(endpointId, &deviceStreamQueueSize);
+
+   msgApi->RegisterSetting(endpointId, &rgbStreamEnabled);
+   msgApi->RegisterSetting(endpointId, &rgbStreamAddress);
+   msgApi->RegisterSetting(endpointId, &rgbStreamPort);
+   msgApi->RegisterSetting(endpointId, &rgbStreamMaxPPS);
+   msgApi->RegisterSetting(endpointId, &rgbStreamQueueSize);
+
+   msgApi->RegisterSetting(endpointId, &scoreStreamEnabled);
+   msgApi->RegisterSetting(endpointId, &scoreStreamAddress);
+   msgApi->RegisterSetting(endpointId, &scoreStreamPort);
+   msgApi->RegisterSetting(endpointId, &scoreStreamMaxPPS);
+   msgApi->RegisterSetting(endpointId, &scoreStreamQueueSize);
+
    // Load configuration and initialize streams
    LoadConfiguration();
 
@@ -758,12 +775,12 @@ MSGPI_EXPORT void MSGPIAPI UDPBroadcastPluginUnload()
    // Unsubscribe from all messages
    if (msgApi && endpointId)
    {
-      msgApi->UnsubscribeMsg(endpointId, getApiMsgId);
-      msgApi->UnsubscribeMsg(endpointId, onGameStartId);
-      msgApi->UnsubscribeMsg(endpointId, onGameEndId);
-      msgApi->UnsubscribeMsg(endpointId, onDevSrcChangedId);
-      msgApi->UnsubscribeMsg(endpointId, onInputSrcChangedId);
-      msgApi->UnsubscribeMsg(endpointId, onSegSrcChangedId);
+      msgApi->UnsubscribeMsg(getApiMsgId, onGetAPI);
+      msgApi->UnsubscribeMsg(onGameStartId, OnGameStart);
+      msgApi->UnsubscribeMsg(onGameEndId, OnGameEnd);
+      msgApi->UnsubscribeMsg(onDevSrcChangedId, OnDevSrcChanged);
+      msgApi->UnsubscribeMsg(onInputSrcChangedId, OnInputSrcChanged);
+      msgApi->UnsubscribeMsg(onSegSrcChangedId, OnSegSrcChanged);
 
       msgApi->ReleaseMsgID(getApiMsgId);
       msgApi->ReleaseMsgID(onGameStartId);

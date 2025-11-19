@@ -7,8 +7,6 @@
 #include <charconv>
 #include <thread>
 #include <mutex>
-#include <vector>
-#include <cmath>
 #if defined(__APPLE__) || defined(__linux__) || defined(__ANDROID__)
 #include <pthread.h>
 #endif
@@ -21,9 +19,6 @@
 #pragma warning(disable : 4251) // xxx needs dll-interface
 #include "DOF/DOF.h"
 #pragma warning(pop)
-
-// UDP Broadcasting Plugin API
-#include "../udp-broadcast/udp_broadcast_api.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -53,13 +48,9 @@ static unsigned int getDevSrcId;
 static unsigned int onDevSrcChangedId;
 static unsigned int getInputSrcId;
 static unsigned int onInputSrcChangedId;
-static unsigned int getSegSrcId;
-static unsigned int onSegSrcChangedId;
 
 static std::mutex sourceMutex;
 static bool isRunning = false;
-
-// PinMAME Device Source
 static DevSrcId pinmameDevSrc = {};
 static InputSrcId pinmameInputSrc = {};
 static unsigned int nPmSolenoids = 0;
@@ -68,32 +59,9 @@ static unsigned int nPmGIs = 0;
 static int pmLampIndex = -1;
 static unsigned int nPmLamps = 0;
 
-// Additional Device Sources (B2S, custom controllers, etc.)
-struct AdditionalDevSrc {
-   DevSrcId devSrc;
-   std::string endpointName;
-   unsigned int nDevices;
-};
-static std::vector<AdditionalDevSrc> additionalDevSources;
-
-// Segment Display Sources
-// Stores discovered segment display sources (PinMAME, FlexDMD, custom displays)
-// Each source provides segment brightness data for score/alphanumeric displays
-// Frame IDs are tracked to avoid broadcasting duplicate frames
-struct SegmentDisplaySource {
-   SegSrcId segSrc;                     // Source interface from ControllerPlugin API
-   std::string endpointName;            // Endpoint name (e.g., "PinMAME", "FlexDMD")
-   unsigned int nElements;              // Number of display elements (e.g., 6 for 6-digit display)
-   std::vector<uint32_t> lastFrameIds;  // Track frame IDs to avoid duplicate sends
-};
-static std::vector<SegmentDisplaySource> segmentDisplaySources;
-
 static std::thread pollThread;
 
 static DOF::DOF* pDOF = nullptr;
-
-// UDP Broadcasting Plugin API
-static UDPBroadcastAPI* udpBroadcastApi = nullptr;
 
 static void OnPollStates(void* userData);
 
@@ -131,45 +99,6 @@ void LIBDOFCALLBACK OnDOFLog(DOF_LogLevel logLevel, const char* format, va_list 
    }
 }
 
-static string GetSettingString(MsgPluginAPI* pMsgApi, const char* section, const char* key, const string& def = string())
-{
-   char buf[256];
-   pMsgApi->GetSetting(section, key, buf, sizeof(buf));
-   return buf[0] ? string(buf) : def;
-}
-
-static int GetSettingInt(MsgPluginAPI* pMsgApi, const char* section, const char* key, int def = 0)
-{
-   const auto s = GetSettingString(pMsgApi, section, key, string());
-   int result;
-   return (s.empty() || (std::from_chars(s.c_str(), s.c_str() + s.length(), result).ec != std::errc{})) ? def : result;
-}
-
-static bool GetSettingBool(MsgPluginAPI* pMsgApi, const char* section, const char* key, bool def = false)
-{
-   const auto s = GetSettingString(pMsgApi, section, key, string());
-   int result;
-   return (s.empty() || (std::from_chars(s.c_str(), s.c_str() + s.length(), result).ec != std::errc{})) ? def : (result != 0);
-}
-
-// Extract table name from full path
-// Example: "/path/to/tables/Attack from Mars.vpx" -> "Attack from Mars"
-static string ExtractTableName(const string& fullPath)
-{
-   if (fullPath.empty()) return string();
-
-   // Find last path separator
-   size_t lastSep = fullPath.find_last_of("/\\");
-   string filename = (lastSep != string::npos) ? fullPath.substr(lastSep + 1) : fullPath;
-
-   // Remove file extension
-   size_t lastDot = filename.find_last_of('.');
-   if (lastDot != string::npos) {
-      filename = filename.substr(0, lastDot);
-   }
-
-   return filename;
-}
 #ifdef _WIN32
 static void SetThreadName(const std::string& name)
 {
@@ -214,14 +143,7 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             bool state = pinmameInputSrc.GetInputState(i);
             if (isInitialState || (wireStates[i] != state))
-            {
                pDOF->DataReceive('W', i + 1, state ? 1 : 0);
-               // UDP Broadcast
-               if (udpBroadcastApi && udpBroadcastApi->Wire) {
-                  udpBroadcastApi->Wire(i + 1, state ? 1 : 0);
-               }
-               wireStates[i] = state;
-            }
          }
 
          solStates.resize(nPmSolenoids);
@@ -229,15 +151,7 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             float state = pinmameDevSrc.GetFloatState(i);
             if (isInitialState || (solStates[i] && state < 0.25f) || (!solStates[i] && state > 0.75f))
-            {
-               bool binaryState = state > 0.5f;
-               pDOF->DataReceive('S', i + 1, binaryState ? 1 : 0);
-               // UDP Broadcast
-               if (udpBroadcastApi && udpBroadcastApi->Solenoid) {
-                  udpBroadcastApi->Solenoid(i + 1, static_cast<uint16_t>(state * 255));
-               }
-               solStates[i] = binaryState;
-            }
+               pDOF->DataReceive('S', i + 1, state > 0.5f ? 1 : 0);
          }
 
          lampStates.resize(nPmLamps);
@@ -245,15 +159,7 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             float state = pinmameDevSrc.GetFloatState(pmLampIndex + i);
             if (isInitialState || (lampStates[i] && state < 0.25f) || (!lampStates[i] && state > 0.75f))
-            {
-               bool binaryState = state > 0.5f;
-               pDOF->DataReceive('L', i + 1, binaryState ? 1 : 0);
-               // UDP Broadcast
-               if (udpBroadcastApi && udpBroadcastApi->Lamp) {
-                  udpBroadcastApi->Lamp(i + 1, static_cast<uint16_t>(state * 255));
-               }
-               lampStates[i] = binaryState;
-            }
+               pDOF->DataReceive('L', i + 1, state > 0.5f ? 1 : 0);
          }
 
          giStates.resize(nPmGIs);
@@ -261,114 +167,12 @@ static void PollThread(const string& tablePath, const string& gameId)
          {
             float state = pinmameDevSrc.GetFloatState(pmGiIndex + i);
             if (isInitialState || (giStates[i] && state < 0.25f) || (!giStates[i] && state > 0.75f))
-            {
-               bool binaryState = state > 0.5f;
-               pDOF->DataReceive('G', i + 1, binaryState ? 1 : 0);
-               // UDP Broadcast
-               if (udpBroadcastApi && udpBroadcastApi->GI) {
-                  udpBroadcastApi->GI(i + 1, static_cast<uint16_t>(state * 255));
-               }
-               giStates[i] = binaryState;
-            }
-         }
-
-         // Poll additional device sources (B2S, custom controllers, etc.)
-         static std::vector<std::vector<float>> additionalDeviceStates;
-         additionalDeviceStates.resize(additionalDevSources.size());
-
-         for (size_t srcIdx = 0; srcIdx < additionalDevSources.size(); srcIdx++)
-         {
-            const auto& src = additionalDevSources[srcIdx];
-            auto& states = additionalDeviceStates[srcIdx];
-
-            isInitialState |= states.size() != src.nDevices;
-            states.resize(src.nDevices);
-
-            for (unsigned int i = 0; i < src.nDevices; i++)
-            {
-               float state = src.devSrc.GetFloatState(i);
-
-               // Check for significant state change or initial state
-               if (isInitialState || fabsf(states[i] - state) > 0.05f)
-               {
-                  // Broadcast event based on device groupId
-                  uint16_t groupId = src.devSrc.deviceDefs[i].groupId;
-                  uint16_t deviceId = src.devSrc.deviceDefs[i].deviceId;
-
-                  if (pDeviceEventCollector)
-                  {
-                     // Map groupId to event types
-                     // 0x0100 = GI, 0x0200 = Lamps, 0x0300 = Mechs, etc.
-                     switch (groupId)
-                     {
-                        case 0x0100: // GI
-                           pDeviceEventCollector->GI(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
-                           break;
-                        case 0x0200: // Lamps
-                           pDeviceEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
-                           break;
-                        case 0x0300: // Mechs/Solenoids
-                           pDeviceEventCollector->Solenoid(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
-                           break;
-                        default:
-                           // Generic event for unknown types
-                           pDeviceEventCollector->Lamp(i + 1, static_cast<uint16_t>(state * 255), groupId, deviceId);
-                           break;
-                     }
-                  }
-
-                  states[i] = state;
-               }
-            }
-         }
-
-         ///////////////////////////////////////////////////////////////////////////
-         // Poll Segment Display Sources
-         //
-         // Queries all discovered segment display sources (PinMAME, FlexDMD, etc.)
-         // for current display state. Each display provides:
-         // - Frame ID: Increments when display content changes
-         // - Segment data: 16 float values per element (brightness per segment)
-         //
-         // Only broadcasts frames when frame ID changes to avoid redundant packets.
-         // Sent to Score stream (port 7781) for external display rendering.
-         ///////////////////////////////////////////////////////////////////////////
-         for (size_t srcIdx = 0; srcIdx < segmentDisplaySources.size(); srcIdx++)
-         {
-            auto& src = segmentDisplaySources[srcIdx];
-
-            // Get current display state
-            SegDisplayFrame frame = src.segSrc.GetState(src.segSrc.id);
-
-            // Only send if frame changed (check frame ID)
-            if (frame.frameId != src.lastFrameIds[0])
-            {
-               src.lastFrameIds[0] = frame.frameId;
-
-               // Convert element types to uint8_t array
-               uint8_t elementTypes[CTLPI_SEG_MAX_DISP_ELEMENTS];
-               for (unsigned int i = 0; i < src.nElements; i++) {
-                  elementTypes[i] = static_cast<uint8_t>(src.segSrc.elementType[i]);
-               }
-
-               // Submit to Score stream collector
-               if (pScoreEventCollector) {
-                  pScoreEventCollector->SegmentDisplay(
-                     src.segSrc.id.id,           // displayId
-                     src.segSrc.groupId.id,      // groupId
-                     frame.frameId,              // frameId
-                     src.segSrc.hardware,        // hardware hint
-                     src.nElements,              // nElements
-                     elementTypes,               // elementTypes
-                     frame.frame                 // segment data (floats)
-                  );
-               }
-            }
+               pDOF->DataReceive('G', i + 1, state > 0.5f ? 1 : 0);
          }
 
          isInitialState = false;
       }
-
+      
       // Fixed update at 60 FPS
       std::this_thread::sleep_for(std::chrono::microseconds(16666));
    }
@@ -394,13 +198,6 @@ static void OnControllerGameStart(const unsigned int eventId, void* userData, vo
       VPXTableInfo tableInfo;
       vpxApi->GetTableInfo(&tableInfo);
       pollThread = std::thread(PollThread, tableInfo.path, msg->gameId);
-
-      // UDP Broadcast: Table info (name + ROM)
-      if (pDeviceEventCollector) {
-         string tableName = ExtractTableName(tableInfo.path);
-         pDeviceEventCollector->TableInfo(tableName.c_str(), msg->gameId);
-         LOGD("DOFPlugin: Broadcasted table info - Table:'%s' ROM:'%s'", tableName.c_str(), msg->gameId);
-      }
    }
 }
 
@@ -408,13 +205,6 @@ static void OnControllerGameEnd(const unsigned int eventId, void* userData, void
 {
    if (pDOF) {
       LOGI("DOFPlugin: OnControllerGameEnd");
-
-      // UDP Broadcast: Table unloaded (empty TableInfo signals end of session)
-      if (pDeviceEventCollector) {
-         pDeviceEventCollector->TableInfo("", "");
-         LOGD("DOFPlugin: Broadcasted table unload (empty TableInfo)");
-      }
-
       isRunning = false;
       if (pollThread.joinable())
          pollThread.join();
@@ -423,7 +213,6 @@ static void OnControllerGameEnd(const unsigned int eventId, void* userData, void
 
 static void ClearDevices()
 {
-   // Clear PinMAME devices
    delete[] pinmameDevSrc.deviceDefs;
    nPmSolenoids = 0;
    pmGiIndex = -1;
@@ -431,12 +220,6 @@ static void ClearDevices()
    pmLampIndex = -1;
    nPmLamps = 0;
    memset(&pinmameDevSrc, 0, sizeof(pinmameDevSrc));
-
-   // Clear additional device sources
-   for (auto& src : additionalDevSources) {
-      delete[] src.devSrc.deviceDefs;
-   }
-   additionalDevSources.clear();
 }
 
 static void OnDevSrcChanged(const unsigned int eventId, void* userData, void* msgData)
@@ -459,37 +242,15 @@ static void OnDevSrcChanged(const unsigned int eventId, void* userData, void* ms
    {
       memset(&info, 0, sizeof(info));
       msgApi->GetEndpointInfo(getSrcMsg.entries[i].id.endpointId, &info);
-
-      std::string endpointName = (info.id != nullptr) ? std::string(info.id) : "";
-
-      if (endpointName == "PinMAME")
+      if (info.id != nullptr && info.id == "PinMAME"s)
       {
-         // Handle PinMAME (primary source)
          pinmameDevSrc = getSrcMsg.entries[i];
          if (pinmameDevSrc.deviceDefs)
          {
             pinmameDevSrc.deviceDefs = new DeviceDef[pinmameDevSrc.nDevices];
             memcpy(pinmameDevSrc.deviceDefs, getSrcMsg.entries[i].deviceDefs, getSrcMsg.entries[i].nDevices * sizeof(DeviceDef));
          }
-      }
-      else if (!endpointName.empty())
-      {
-         // Handle additional device sources (B2S, custom controllers, etc.)
-         AdditionalDevSrc addSrc;
-         addSrc.endpointName = endpointName;
-         addSrc.devSrc = getSrcMsg.entries[i];
-         addSrc.nDevices = getSrcMsg.entries[i].nDevices;
-
-         if (addSrc.devSrc.deviceDefs)
-         {
-            addSrc.devSrc.deviceDefs = new DeviceDef[addSrc.nDevices];
-            memcpy(addSrc.devSrc.deviceDefs, getSrcMsg.entries[i].deviceDefs,
-                   getSrcMsg.entries[i].nDevices * sizeof(DeviceDef));
-         }
-
-         additionalDevSources.push_back(addSrc);
-         LOGI("DOFPlugin: Found additional device source: %s (%d devices)",
-              endpointName.c_str(), addSrc.nDevices);
+         break;
       }
    }
    delete[] getSrcMsg.entries;
@@ -546,69 +307,6 @@ static void OnInputSrcChanged(const unsigned int eventId, void* userData, void* 
    LOGI("DOFPlugin: OnInputSrcChanged - Found %d PinMAME inputs", pinmameInputSrc.nInputs);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// OnSegSrcChanged - Segment Display Source Discovery
-//
-// Called when segment display sources are added, modified, or removed.
-// Discovers all segment display sources (PinMAME score displays, FlexDMD,
-// custom alphanumeric displays) and stores their metadata for polling.
-//
-// Uses two-phase query:
-// 1. Query with null buffer to get count
-// 2. Allocate buffer and query again to get actual data
-//
-// Each source provides:
-// - Display ID and group ID for identification
-// - Number of elements (e.g., 6 for 6-digit display)
-// - Element types (7-seg, 14-seg, 16-seg, etc.)
-// - Hardware hints (VFD, LED, Plasma) for rendering
-// - GetState() callback to retrieve current segment brightness
-///////////////////////////////////////////////////////////////////////////////
-static void OnSegSrcChanged(const unsigned int eventId, void* userData, void* msgData)
-{
-   std::lock_guard<std::mutex> lock(sourceMutex);
-
-   // Clear existing segment display sources
-   segmentDisplaySources.clear();
-
-   // Query all segment display sources (phase 1: get count)
-   GetSegSrcMsg getSrcMsg = { 0, 0, nullptr };
-   msgApi->BroadcastMsg(endpointId, getSegSrcId, &getSrcMsg);
-
-   if (getSrcMsg.count == 0) {
-      LOGI("DOFPlugin: OnSegSrcChanged - No segment display sources");
-      return;
-   }
-
-   // Query all segment display sources (phase 2: get actual data)
-   getSrcMsg.maxEntryCount = getSrcMsg.count;
-   getSrcMsg.count = 0;
-   getSrcMsg.entries = new SegSrcId[getSrcMsg.maxEntryCount];
-   msgApi->BroadcastMsg(endpointId, getSegSrcId, &getSrcMsg);
-
-   // Store all segment display sources
-   MsgEndpointInfo info;
-   for (unsigned int i = 0; i < getSrcMsg.count; i++) {
-      memset(&info, 0, sizeof(info));
-      msgApi->GetEndpointInfo(getSrcMsg.entries[i].id.endpointId, &info);
-
-      SegmentDisplaySource src;
-      src.segSrc = getSrcMsg.entries[i];
-      src.endpointName = info.id ? info.id : "Unknown";
-      src.nElements = getSrcMsg.entries[i].nElements;
-      src.lastFrameIds.resize(1, 0);  // Track one frame ID per display
-
-      segmentDisplaySources.push_back(src);
-
-      LOGI("DOFPlugin: Found segment display - Endpoint:%s Elements:%d Hardware:0x%08X",
-           src.endpointName.c_str(), src.nElements, getSrcMsg.entries[i].hardware);
-   }
-
-   delete[] getSrcMsg.entries;
-
-   LOGI("DOFPlugin: OnSegSrcChanged - Found %d segment display source(s)", (int)segmentDisplaySources.size());
-}
-
 }
 
 using namespace DOFPlugin;
@@ -634,16 +332,12 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginLoad(const uint32_t sessionId, const MsgPlug
    onDevSrcChangedId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_DEVICE_ON_SRC_CHG_MSG);
    getInputSrcId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_INPUT_GET_SRC_MSG);
    onInputSrcChangedId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_INPUT_ON_SRC_CHG_MSG);
-   getSegSrcId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_SEG_GET_SRC_MSG);
-   onSegSrcChangedId = msgApi->GetMsgID(CTLPI_NAMESPACE, CTLPI_SEG_ON_SRC_CHG_MSG);
 
    msgApi->SubscribeMsg(endpointId, onDevSrcChangedId, OnDevSrcChanged, nullptr);
    msgApi->SubscribeMsg(endpointId, onInputSrcChangedId, OnInputSrcChanged, nullptr);
-   msgApi->SubscribeMsg(endpointId, onSegSrcChangedId, OnSegSrcChanged, nullptr);
 
    OnDevSrcChanged(onDevSrcChangedId, nullptr, nullptr);
    OnInputSrcChanged(onInputSrcChangedId, nullptr, nullptr);
-   OnSegSrcChanged(onSegSrcChangedId, nullptr, nullptr);
 
    VPXInfo vpxInfo;
    vpxApi->GetVpxInfo(&vpxInfo);
@@ -653,74 +347,6 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginLoad(const uint32_t sessionId, const MsgPlug
    pConfig->SetBasePath(vpxInfo.prefPath);
 
    pDOF = new DOF::DOF();
-
-   // Initialize UDP Broadcasting - Device Stream (Solenoid, Lamp, GI, Wire)
-   DOFUDP::BroadcasterConfig deviceConfig;
-   deviceConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamEnabled", true);
-   deviceConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamAddress", "255.255.255.255");
-   deviceConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamPort", 7778);
-   deviceConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamMaxPacketsPerSecond", 120);
-   deviceConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPDeviceStreamQueueSize", 4096);
-
-   if (deviceConfig.enabled) {
-      if (DOFUDP::InitializeStream(DOFUDP::StreamType::DEVICE, deviceConfig)) {
-         pDeviceEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::DEVICE);
-         if (pDeviceEventCollector) {
-            LOGI("DOFPlugin: UDP Device Stream initialized on %s:%d", deviceConfig.address.c_str(), deviceConfig.port);
-         }
-      } else {
-         LOGE("DOFPlugin: Failed to initialize UDP Device Stream");
-      }
-   } else {
-      LOGI("DOFPlugin: UDP Device Stream disabled");
-   }
-
-   // Initialize UDP Broadcasting - RGB Stream
-   DOFUDP::BroadcasterConfig rgbConfig;
-   rgbConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamEnabled", true);
-   rgbConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamAddress", "255.255.255.255");
-   rgbConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamPort", 7779);
-   rgbConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamMaxPacketsPerSecond", 120);
-   rgbConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPRGBStreamQueueSize", 4096);
-
-   if (rgbConfig.enabled) {
-      if (DOFUDP::InitializeStream(DOFUDP::StreamType::RGB, rgbConfig)) {
-         pRGBEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::RGB);
-         if (pRGBEventCollector) {
-            LOGI("DOFPlugin: UDP RGB Stream initialized on %s:%d", rgbConfig.address.c_str(), rgbConfig.port);
-         }
-      } else {
-         LOGE("DOFPlugin: Failed to initialize UDP RGB Stream");
-      }
-   } else {
-      LOGI("DOFPlugin: UDP RGB Stream disabled");
-   }
-
-   // Initialize UDP Broadcasting - Score Stream (Segment Displays)
-   // Broadcasts segment display frames (score/alphanumeric displays) with:
-   // - 16 float values per element (segment brightness: 0.0-1.0)
-   // - Hardware hints (VFD, LED, Plasma) for accurate rendering
-   // - Frame IDs to enable client-side duplicate detection
-   // - Lower rate limit (60 pps) since displays update less frequently
-   DOFUDP::BroadcasterConfig scoreConfig;
-   scoreConfig.enabled = GetSettingBool(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamEnabled", true);
-   scoreConfig.address = GetSettingString(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamAddress", "255.255.255.255");
-   scoreConfig.port = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamPort", 7781);
-   scoreConfig.maxPacketsPerSecond = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamMaxPacketsPerSecond", 60);
-   scoreConfig.queueSize = GetSettingInt(const_cast<MsgPluginAPI*>(msgApi), "DOF", "UDPScoreStreamQueueSize", 256);
-
-   if (scoreConfig.enabled) {
-      if (DOFUDP::InitializeStream(DOFUDP::StreamType::SCORE, scoreConfig)) {
-         pScoreEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::SCORE);
-         if (pScoreEventCollector) {
-            LOGI("DOFPlugin: UDP Score Stream initialized on %s:%d", scoreConfig.address.c_str(), scoreConfig.port);
-         }
-      } else {
-         LOGE("DOFPlugin: Failed to initialize UDP Score Stream");
-      }
-   } else {
-      LOGI("DOFPlugin: UDP Score Stream disabled");
-   }
 }
 
 MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
@@ -728,15 +354,6 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
    isRunning = false;
    if (pollThread.joinable())
       pollThread.join();
-
-   // Shutdown UDP Broadcasting - All Streams
-   if (pDeviceEventCollector || pRGBEventCollector || pScoreEventCollector) {
-      LOGI("DOFPlugin: Shutting down UDP Broadcasting streams");
-      DOFUDP::ShutdownAllStreams();
-      pDeviceEventCollector = nullptr;
-      pRGBEventCollector = nullptr;
-      pScoreEventCollector = nullptr;
-   }
 
    ClearDevices();
    delete[] pinmameInputSrc.inputDefs;
@@ -749,7 +366,6 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
    msgApi->UnsubscribeMsg(onControllerGameEndId, OnControllerGameEnd);
    msgApi->UnsubscribeMsg(onDevSrcChangedId, OnDevSrcChanged);
    msgApi->UnsubscribeMsg(onInputSrcChangedId, OnInputSrcChanged);
-   msgApi->UnsubscribeMsg(onSegSrcChangedId, OnSegSrcChanged);
 
    msgApi->ReleaseMsgID(onControllerGameStartId);
    msgApi->ReleaseMsgID(onControllerGameEndId);
@@ -757,8 +373,6 @@ MSGPI_EXPORT void MSGPIAPI DOFPluginUnload()
    msgApi->ReleaseMsgID(onDevSrcChangedId);
    msgApi->ReleaseMsgID(getInputSrcId);
    msgApi->ReleaseMsgID(onInputSrcChangedId);
-   msgApi->ReleaseMsgID(getSegSrcId);
-   msgApi->ReleaseMsgID(onSegSrcChangedId);
 
    msgApi = nullptr;
 }
