@@ -6,7 +6,7 @@
 #include <cstring>
 #include <chrono>
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 ///////////////////////////////////////////////////////////////////////////////
 // DOF UDP Broadcasting Protocol
@@ -485,4 +485,4 @@ struct Statistics {
     }
 };
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

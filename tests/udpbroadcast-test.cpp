@@ -3,16 +3,16 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
-#include "plugins/udp-broadcast/dof_udp_event.h"
+#include "plugins/udp-broadcast/event.h"
 #include "plugins/udp-broadcast/lock_free_queue.h"
-#include "plugins/udp-broadcast/dof_event_collector.h"
-#include "plugins/udp-broadcast/dof_udp_system.h"
+#include "plugins/udp-broadcast/event_collector.h"
+#include "plugins/udp-broadcast/system.h"
 
 #include <thread>
 #include <chrono>
 #include <cstring>
 
-using namespace DOFUDP;
+using namespace UDPBroadcast;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Event Protocol Tests

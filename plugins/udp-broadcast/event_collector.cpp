@@ -1,8 +1,8 @@
 // license:GPLv3+
 
-#include "dof_event_collector.h"
+#include "event_collector.h"
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 EventCollector::EventCollector(size_t queueSize)
     : m_queue(new LockFreeQueue<Event, DEFAULT_QUEUE_SIZE>())
@@ -182,7 +182,7 @@ bool EventCollector::PopEvent(Event& event)
 
 size_t EventCollector::PopBatch(Event* events, size_t maxEvents)
 {
-    return DOFUDP::PopBatch(*m_queue, events, maxEvents);
+    return UDPBroadcast::PopBatch(*m_queue, events, maxEvents);
 }
 
 size_t EventCollector::GetQueueSize() const
@@ -240,4 +240,4 @@ bool EventCollector::PushTableInfo(const TableInfoPacket& packet)
     return m_tableInfoQueue->Push(packet);
 }
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

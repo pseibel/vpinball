@@ -71,17 +71,17 @@ g++ -std=c++20 \
     -Iplugins/udp-broadcast \
     -Ithird-party/include \
     -pthread \
-    tests/udp-broadcast-test.cpp \
-    plugins/udp-broadcast/dof_event_collector.cpp \
-    plugins/udp-broadcast/dof_udp_broadcaster.cpp \
-    plugins/udp-broadcast/dof_udp_system.cpp \
-    -o udp-broadcast-test
+    tests/udpbroadcast-test.cpp \
+    plugins/udp-broadcast/event_collector.cpp \
+    plugins/udp-broadcast/broadcaster.cpp \
+    plugins/udp-broadcast/system.cpp \
+    -o udpbroadcast-test
 ```
 
 ### Run All Tests
 
 ```bash
-./udp-broadcast-test
+./udpbroadcast-test
 ```
 
 Expected output on success:
@@ -95,48 +95,48 @@ Expected output on success:
 
 ```bash
 # Event protocol tests
-./udp-broadcast-test --test-suite="DOF UDP Event Protocol"
+./udpbroadcast-test --test-suite="UDP Broadcast Event Protocol"
 
 # Lock-free queue tests
-./udp-broadcast-test --test-suite="Lock-Free Queue"
+./udpbroadcast-test --test-suite="Lock-Free Queue"
 
 # Event collector tests
-./udp-broadcast-test --test-suite="Event Collector"
+./udpbroadcast-test --test-suite="Event Collector"
 
 # Segment display tests
-./udp-broadcast-test --test-suite="Segment Display Support"
+./udpbroadcast-test --test-suite="Segment Display Support"
 
 # Table information tests
-./udp-broadcast-test --test-suite="Table information support"
+./udpbroadcast-test --test-suite="Table information support"
 
 # UDP system integration tests
-./udp-broadcast-test --test-suite="UDP System Integration"
+./udpbroadcast-test --test-suite="UDP System Integration"
 
 # Thread safety tests
-./udp-broadcast-test --test-suite="Thread Safety"
+./udpbroadcast-test --test-suite="Thread Safety"
 ```
 
 ### Run Specific Test Cases
 
 ```bash
 # Test event structure size
-./udp-broadcast-test --test-case="Event structure size"
+./udpbroadcast-test --test-case="Event structure size"
 
 # Test queue operations
-./udp-broadcast-test --test-case="Basic push and pop"
+./udpbroadcast-test --test-case="Basic push and pop"
 
 # Test statistics
-./udp-broadcast-test --test-case="Statistics tracking"
+./udpbroadcast-test --test-case="Statistics tracking"
 ```
 
 ### Verbose Output
 
 ```bash
 # Show all successful assertions
-./udp-broadcast-test --success
+./udpbroadcast-test --success
 
 # Show detailed test execution
-./udp-broadcast-test --success --duration=true
+./udpbroadcast-test --success --duration=true
 ```
 
 ## Test Details
@@ -188,7 +188,7 @@ Multi-threaded testing:
 Run with timing to measure performance:
 
 ```bash
-./udp-broadcast-test --duration=true --test-suite="Lock-Free Queue"
+./udpbroadcast-test --duration=true --test-suite="Lock-Free Queue"
 ```
 
 Expected performance (typical hardware):
@@ -256,12 +256,12 @@ jobs:
       - name: Build tests
         run: |
           g++ -std=c++20 -I. -Iplugins/udp-broadcast -Ithird-party/include -pthread \
-              tests/udp-broadcast-test.cpp \
+              tests/udpbroadcast-test.cpp \
               plugins/udp-broadcast/*.cpp \
-              -o udp-broadcast-test
+              -o udpbroadcast-test
 
       - name: Run tests
-        run: ./udp-broadcast-test
+        run: ./udpbroadcast-test
 ```
 
 ## Adding New Tests

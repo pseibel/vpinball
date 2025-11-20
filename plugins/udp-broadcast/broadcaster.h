@@ -2,15 +2,15 @@
 
 #pragma once
 
-#include "dof_udp_event.h"
-#include "dof_event_collector.h"
+#include "event.h"
+#include "event_collector.h"
 
 #include <string>
 #include <thread>
 #include <atomic>
 #include <chrono>
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 ///////////////////////////////////////////////////////////////////////////////
 // UDP Broadcaster Configuration
@@ -156,4 +156,4 @@ private:
     uint32_t m_packetsThisSecond;
 };
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

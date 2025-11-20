@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include "dof_udp_broadcaster.h"
-#include "dof_event_collector.h"
+#include "broadcaster.h"
+#include "event_collector.h"
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 ///////////////////////////////////////////////////////////////////////////////
 // DOF UDP Broadcasting System - Multi-Stream Architecture
@@ -85,4 +85,4 @@ Statistics GetStreamStatistics(StreamType type);
 // Reset statistics counters for a specific stream
 void ResetStreamStatistics(StreamType type);
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

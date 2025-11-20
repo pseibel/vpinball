@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include "dof_udp_event.h"
+#include "event.h"
 #include "lock_free_queue.h"
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Event Collector
@@ -182,4 +182,4 @@ private:
     std::atomic<uint64_t> m_tableInfosDropped;
 };
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

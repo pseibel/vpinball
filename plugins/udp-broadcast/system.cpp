@@ -1,11 +1,11 @@
 // license:GPLv3+
 
-#include "dof_udp_system.h"
+#include "system.h"
 
 #include <mutex>
 #include <map>
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Multi-Stream State
@@ -186,4 +186,4 @@ void ResetStreamStatistics(StreamType type)
     }
 }
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

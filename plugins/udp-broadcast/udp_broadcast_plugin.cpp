@@ -17,8 +17,8 @@
 #include "ControllerPlugin.h"
 #include "LoggingPlugin.h"
 #include "udp_broadcast_api.h"
-#include "dof_udp_system.h"
-#include "dof_event_collector.h"
+#include "system.h"
+#include "event_collector.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -51,9 +51,9 @@ static unsigned int getSegSrcId = 0;
 static unsigned int onSegSrcChangedId = 0;
 
 // Event collectors for each stream
-static DOFUDP::EventCollector* pDeviceEventCollector = nullptr;
-static DOFUDP::EventCollector* pRGBEventCollector = nullptr;
-static DOFUDP::EventCollector* pScoreEventCollector = nullptr;
+static UDPBroadcast::EventCollector* pDeviceEventCollector = nullptr;
+static UDPBroadcast::EventCollector* pRGBEventCollector = nullptr;
+static UDPBroadcast::EventCollector* pScoreEventCollector = nullptr;
 
 // Polling state
 static std::mutex sourceMutex;
@@ -603,7 +603,7 @@ MSGPI_INT_VAL_SETTING(scoreStreamQueueSize, "score.queueSize", "Score Queue Size
 bool LoadConfiguration()
 {
    // Load Device Stream configuration from properties
-   DOFUDP::BroadcasterConfig deviceConfig;
+   UDPBroadcast::BroadcasterConfig deviceConfig;
    deviceConfig.enabled = deviceStreamEnabled_Val != 0;
    deviceConfig.address = std::string(deviceStreamAddress_Val);
    deviceConfig.port = deviceStreamPort_Val;
@@ -611,7 +611,7 @@ bool LoadConfiguration()
    deviceConfig.queueSize = deviceStreamQueueSize_Val;
 
    // Load RGB Stream configuration from properties
-   DOFUDP::BroadcasterConfig rgbConfig;
+   UDPBroadcast::BroadcasterConfig rgbConfig;
    rgbConfig.enabled = rgbStreamEnabled_Val != 0;
    rgbConfig.address = std::string(rgbStreamAddress_Val);
    rgbConfig.port = rgbStreamPort_Val;
@@ -619,7 +619,7 @@ bool LoadConfiguration()
    rgbConfig.queueSize = rgbStreamQueueSize_Val;
 
    // Load Score Stream configuration from properties
-   DOFUDP::BroadcasterConfig scoreConfig;
+   UDPBroadcast::BroadcasterConfig scoreConfig;
    scoreConfig.enabled = scoreStreamEnabled_Val != 0;
    scoreConfig.address = std::string(scoreStreamAddress_Val);
    scoreConfig.port = scoreStreamPort_Val;
@@ -628,8 +628,8 @@ bool LoadConfiguration()
 
    // Initialize streams
    if (deviceConfig.enabled) {
-      if (DOFUDP::InitializeStream(DOFUDP::StreamType::DEVICE, deviceConfig)) {
-         pDeviceEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::DEVICE);
+      if (UDPBroadcast::InitializeStream(UDPBroadcast::StreamType::DEVICE, deviceConfig)) {
+         pDeviceEventCollector = UDPBroadcast::GetEventCollector(UDPBroadcast::StreamType::DEVICE);
          if (pDeviceEventCollector) {
             LOGI("UDPBroadcast: Device Stream initialized on %s:%d",
                  deviceConfig.address.c_str(), deviceConfig.port);
@@ -642,8 +642,8 @@ bool LoadConfiguration()
    }
 
    if (rgbConfig.enabled) {
-      if (DOFUDP::InitializeStream(DOFUDP::StreamType::RGB, rgbConfig)) {
-         pRGBEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::RGB);
+      if (UDPBroadcast::InitializeStream(UDPBroadcast::StreamType::RGB, rgbConfig)) {
+         pRGBEventCollector = UDPBroadcast::GetEventCollector(UDPBroadcast::StreamType::RGB);
          if (pRGBEventCollector) {
             LOGI("UDPBroadcast: RGB Stream initialized on %s:%d",
                  rgbConfig.address.c_str(), rgbConfig.port);
@@ -656,8 +656,8 @@ bool LoadConfiguration()
    }
 
    if (scoreConfig.enabled) {
-      if (DOFUDP::InitializeStream(DOFUDP::StreamType::SCORE, scoreConfig)) {
-         pScoreEventCollector = DOFUDP::GetEventCollector(DOFUDP::StreamType::SCORE);
+      if (UDPBroadcast::InitializeStream(UDPBroadcast::StreamType::SCORE, scoreConfig)) {
+         pScoreEventCollector = UDPBroadcast::GetEventCollector(UDPBroadcast::StreamType::SCORE);
          if (pScoreEventCollector) {
             LOGI("UDPBroadcast: Score Stream initialized on %s:%d",
                  scoreConfig.address.c_str(), scoreConfig.port);
@@ -759,7 +759,7 @@ MSGPI_EXPORT void MSGPIAPI UDPBroadcastPluginUnload()
    }
 
    // Shutdown all streams
-   DOFUDP::ShutdownAllStreams();
+   UDPBroadcast::ShutdownAllStreams();
    pDeviceEventCollector = nullptr;
    pRGBEventCollector = nullptr;
    pScoreEventCollector = nullptr;

@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Lock-free Single Producer Single Consumer (SPSC) Queue
@@ -175,4 +175,4 @@ size_t PushBatch(LockFreeQueue<T, Size>& queue, const T* items, size_t count) {
     return pushed;
 }
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

@@ -1,6 +1,6 @@
 // license:GPLv3+
 
-#include "dof_udp_broadcaster.h"
+#include "broadcaster.h"
 
 #include <cstring>
 
@@ -29,7 +29,7 @@
     #define CLOSE_SOCKET close
 #endif
 
-namespace DOFUDP {
+namespace UDPBroadcast {
 
 UDPBroadcaster::UDPBroadcaster()
     : m_collector(nullptr)
@@ -422,4 +422,4 @@ void UDPBroadcaster::ProcessEvents()
     }
 }
 
-} // namespace DOFUDP
+} // namespace UDPBroadcast

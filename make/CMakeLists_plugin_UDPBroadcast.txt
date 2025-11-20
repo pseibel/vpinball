@@ -7,9 +7,9 @@ set(CMAKE_C_STANDARD 99)
 
 set(UDPBROADCAST_PLUGIN_SOURCES
    plugins/udp-broadcast/udp_broadcast_plugin.cpp
-   plugins/udp-broadcast/dof_event_collector.cpp
-   plugins/udp-broadcast/dof_udp_broadcaster.cpp
-   plugins/udp-broadcast/dof_udp_system.cpp
+   plugins/udp-broadcast/event_collector.cpp
+   plugins/udp-broadcast/broadcaster.cpp
+   plugins/udp-broadcast/system.cpp
 )
 
 if(BUILD_SHARED)
